@@ -86,16 +86,21 @@ eda:
 # scripts/download_data.py and only for the subreddits listed above.
 download:
   torrent_url: "https://academictorrents.com/download/56aa49f9653ba545f48df2e33679f014d2829c10.torrent"
+  # Fallback metadata source when the torrent page is unavailable.
+  torrent_magnet: "magnet:?xt=urn:btih:56aa49f9653ba545f48df2e33679f014d2829c10"
   arctic_shift_base_url: "https://arctic-shift.photon-reddit.com"
   user_agent: "radpath/0.1 (academic research; aggregate analysis)"
   torrent_dir: data/raw/_torrent
   checkpoint_dir: data/raw/_checkpoints
   manifest: data/raw/download_manifest.json
   log_path: reports/download.log
-  api_limit: 100
+  # "auto" asks the server for its largest page (100-1000 records).
+  api_limit: auto
+  api_window_days: 30
   api_min_interval_seconds: 1.0
   api_max_retries: 5
   api_backoff_seconds: 2.0
   api_timeout_seconds: 60
+  torrent_metadata_timeout_seconds: 600
   # Refuse --yes when the known download would leave less than this free.
-  min_free_gb: 20
+  min_free_gb: 5

@@ -55,9 +55,9 @@ Text features are especially risky; prefer aggregate behaviour counts.
    `control_subreddits`, or `gateway_subreddits`. Never add ad-hoc
    subreddits on the command line.
 3. **Never use per-user or per-author endpoints.** Only subreddit-level
-   endpoints (Arctic Shift `/api/posts/search` and
-   `/api/comments/search`) are permitted. Do not query user profiles,
-   author histories, or any endpoint keyed by username.
+   endpoints (Arctic Shift `/api/posts/search`, `/api/comments/search`, and
+   aggregate `/api/time_series` for planning) are permitted. Do not query
+   user profiles, author histories, or any endpoint keyed by username.
 4. **Respect rate limits.** Arctic Shift requests are limited to at most one
    request per second with a descriptive User-Agent and exponential backoff.
    Stop and report if repeatedly blocked; do not evade limits.

@@ -41,6 +41,7 @@ from radpath.ingest import normalise_created_utc
 LOGGER = logging.getLogger(__name__)
 
 KINDS: tuple[str, ...] = ("comments", "submissions")
+WINDOW_SECONDS = 90 * 86_400
 API_ENDPOINTS: dict[str, str] = {
     "comments": "/api/comments/search",
     "submissions": "/api/posts/search",
@@ -386,6 +387,60 @@ def fetch_torrent(
     return destination
 
 
+def fetch_torrent_magnet(
+    magnet: str,
+    destination: Path,
+    user_agent: str,
+    timeout: float = 600.0,
+) -> Path:
+    """Fetch torrent metadata from a magnet URI without downloading payloads.
+
+    aria2c saves the metadata as ``<infohash>.torrent`` under ``destination``'s
+    directory. The file is validated and renamed to the configured cache name.
+
+    Raises:
+        DownloadError: If aria2c is missing, times out, or saves no valid torrent.
+    """
+    executable = shutil.which("aria2c")
+    if executable is None:
+        raise DownloadError("aria2c is not installed; cannot fetch magnet metadata.")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    before = {path.resolve() for path in destination.parent.glob("*.torrent")}
+    command = [
+        executable,
+        "--bt-metadata-only=true",
+        "--bt-save-metadata=true",
+        "--seed-time=0",
+        "--file-allocation=none",
+        "--summary-interval=30",
+        "--console-log-level=notice",
+        "--dir=" + str(destination.parent),
+        "--user-agent=" + user_agent,
+        magnet,
+    ]
+    LOGGER.info("Fetching torrent metadata from magnet (up to %.0fs)", timeout)
+    try:
+        completed = subprocess.run(command, check=False, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise DownloadError(f"Magnet metadata fetch timed out after {timeout:.0f}s") from exc
+    if completed.returncode != 0:
+        LOGGER.warning("aria2c magnet metadata exited with status %s", completed.returncode)
+    candidates = [
+        path
+        for path in destination.parent.glob("*.torrent")
+        if path.resolve() not in before and path != destination
+    ]
+    for candidate in sorted(candidates, key=lambda path: path.stat().st_mtime, reverse=True):
+        try:
+            load_torrent(candidate)
+        except DownloadError:
+            continue
+        os.replace(candidate, destination)
+        LOGGER.info("Torrent metadata from magnet cached at %s", destination)
+        return destination
+    raise DownloadError("Magnet metadata fetch produced no valid .torrent file.")
+
+
 def aria2_available() -> bool:
     """Return True when ``aria2c`` is on PATH."""
     return shutil.which("aria2c") is not None
@@ -573,7 +628,8 @@ class ArcticShiftClient:
         subreddit: str,
         kind: str,
         after: int | None,
-        limit: int,
+        limit: int | str,
+        before: int | None = None,
     ) -> list[dict[str, Any]]:
         """Fetch one ascending page of subreddit records."""
         if kind not in API_ENDPOINTS:
@@ -581,15 +637,46 @@ class ArcticShiftClient:
         params: dict[str, Any] = {
             "subreddit": subreddit,
             "sort": "asc",
-            "limit": int(limit),
+            "limit": limit,
         }
         if after is not None:
             params["after"] = int(after)
+        if before is not None:
+            params["before"] = int(before)
         url = (
             f"{self.base_url}{API_ENDPOINTS[kind]}?"
             f"{urllib.parse.urlencode(params)}"
         )
-        payload = self._request_json(url)
+        try:
+            payload = self._request_json(url)
+        except DownloadError as exc:
+            # Arctic Shift sometimes returns 422 for a boundary timestamp even
+            # though the same query works one second earlier. Retry slightly
+            # earlier; the caller de-duplicates IDs, and ingest de-duplicates
+            # again, so an overlap is safer than dropping records.
+            if after is None or "HTTP 422" not in str(exc):
+                raise
+            retried = False
+            for shift in range(1, 4):
+                params["after"] = max(0, int(after) - shift)
+                retry_url = (
+                    f"{self.base_url}{API_ENDPOINTS[kind]}?"
+                    f"{urllib.parse.urlencode(params)}"
+                )
+                LOGGER.warning(
+                    "HTTP 422 at after=%s; retrying with after=%s",
+                    after,
+                    params["after"],
+                )
+                try:
+                    payload = self._request_json(retry_url)
+                    retried = True
+                    break
+                except DownloadError as retry_exc:
+                    if "HTTP 422" not in str(retry_exc):
+                        raise
+            if not retried:
+                raise
         if isinstance(payload, dict):
             data = payload.get("data", [])
         elif isinstance(payload, list):
@@ -599,6 +686,31 @@ class ArcticShiftClient:
         if not isinstance(data, list):
             raise DownloadError("Arctic Shift response 'data' is not a list.")
         return data
+
+    def time_series_total(self, subreddit: str, kind: str, precision: str = "year") -> int | None:
+        """Return an aggregate record count, or None when no series is available.
+
+        This uses the subreddit-level ``/api/time_series`` count key. It is
+        only used for planning; no per-user data is requested.
+        """
+        series = "posts" if kind == "submissions" else "comments"
+        params = {
+            "key": f"r/{subreddit}/{series}/count",
+            "precision": precision,
+        }
+        url = f"{self.base_url}/api/time_series?{urllib.parse.urlencode(params)}"
+        payload = self._request_json(url)
+        if not isinstance(payload, dict):
+            return None
+        data = payload.get("data", [])
+        if not isinstance(data, list) or not data:
+            return None
+        total = 0
+        for point in data:
+            if not isinstance(point, dict):
+                return None
+            total += int(point.get("value", 0))
+        return total
 
     def _request_json(self, url: str) -> Any:
         """GET JSON with rate limiting, retries and exponential backoff."""
@@ -704,9 +816,10 @@ def download_api_target(
     raw_dir: Path,
     checkpoint_dir: Path,
     client: ArcticShiftClient,
-    limit: int = 100,
+    limit: int | str = 100,
     overwrite: bool = False,
     progress: bool = True,
+    window_seconds: int = WINDOW_SECONDS,
 ) -> ApiResult:
     """Download one subreddit/type through the Arctic Shift API.
 
@@ -774,12 +887,29 @@ def download_api_target(
     )
     try:
         with final_path.open("ab") as output:
+            window_end: int | None = (
+                int(after) + window_seconds if after is not None else None
+            )
             while True:
                 previous_after = after
-                page = client.fetch_page(target.subreddit, target.kind, after, limit)
+                page = client.fetch_page(
+                    target.subreddit,
+                    target.kind,
+                    after,
+                    limit,
+                    before=window_end,
+                )
                 if not page:
-                    complete = True
-                    break
+                    if window_end is None:
+                        complete = True
+                        break
+                    now = int(time.time())
+                    if window_end >= now:
+                        complete = True
+                        break
+                    after = window_end
+                    window_end += window_seconds
+                    continue
 
                 new_records: list[dict[str, Any]] = []
                 page_ids: set[str] = set()
@@ -820,9 +950,21 @@ def download_api_target(
                     _save_checkpoint(checkpoint_path, checkpoint)
                     bar.update(len(new_records))
 
-                if len(page) < limit:
-                    complete = True
-                    break
+                if window_end is None:
+                    if isinstance(limit, int) and len(page) < limit:
+                        complete = True
+                        break
+                    if max_page_ts is not None:
+                        window_end = max_page_ts + window_seconds
+                else:
+                    if max_page_ts is not None and max_page_ts >= window_end:
+                        after = window_end
+                        window_end += window_seconds
+                        continue
+                    if isinstance(limit, int) and len(page) < limit:
+                        after = window_end
+                        window_end += window_seconds
+                        continue
                 if max_page_ts is None or (
                     previous_after is not None and max_page_ts <= int(previous_after)
                 ):
@@ -955,6 +1097,58 @@ def complete_entry_exists(
         return False
     expected = entry.get("bytes")
     return expected is None or path.stat().st_size == int(expected)
+
+
+def build_api_client(
+    cfg: Mapping[str, Any],
+    section: Mapping[str, Any] | None = None,
+) -> ArcticShiftClient:
+    """Build a rate-limited Arctic Shift client from config."""
+    download_section = section or download_config(cfg)
+    return ArcticShiftClient(
+        base_url=str(download_section["arctic_shift_base_url"]),
+        user_agent=str(download_section["user_agent"]),
+        timeout=float(download_section.get("api_timeout_seconds", 60)),
+        min_interval=float(download_section["api_min_interval_seconds"]),
+        max_retries=int(download_section["api_max_retries"]),
+        backoff_seconds=float(download_section["api_backoff_seconds"]),
+    )
+
+
+def estimate_counts(
+    targets: Sequence[DownloadTarget],
+    client: ArcticShiftClient,
+) -> dict[DownloadTarget, int | None]:
+    """Fetch aggregate record counts for planning, without downloading records."""
+    counts: dict[DownloadTarget, int | None] = {}
+    for target in targets:
+        try:
+            counts[target] = client.time_series_total(target.subreddit, target.kind)
+        except (ApiNotFoundError, DownloadError):
+            counts[target] = None
+    return counts
+
+
+def print_counts(counts: Mapping[DownloadTarget, int | None]) -> None:
+    """Print aggregate record counts per target."""
+    header = f"{'subreddit':<26} {'type':<13} {'records':>12}"
+    print(header)
+    print("-" * len(header))
+    known = 0
+    unknown = 0
+    for target, count in counts.items():
+        if count is None:
+            unknown += 1
+            text = "unavailable"
+        else:
+            known += count
+            text = f"{count:,}"
+        print(f"{target.subreddit:<26} {target.kind:<13} {text:>12}")
+    print("-" * len(header))
+    print(
+        f"{'TOTAL':<26} {len(counts):>13} {known:>12,} known; "
+        f"{unknown} unavailable"
+    )
 
 
 def build_plan(
@@ -1125,9 +1319,30 @@ def acquire(
                 format_bytes(torrent.total_bytes),
             )
         except DownloadError as exc:
-            LOGGER.warning("%s Falling back to the API route.", exc)
-            torrent = None
-            torrent_path = None
+            magnet = str(section.get("torrent_magnet", "")).strip()
+            if magnet and (refresh_torrent or not torrent_cache.exists()):
+                LOGGER.warning("%s Retrying via magnet metadata.", exc)
+                try:
+                    torrent_path = fetch_torrent_magnet(
+                        magnet,
+                        torrent_cache,
+                        str(section["user_agent"]),
+                        timeout=float(section.get("torrent_metadata_timeout_seconds", 600)),
+                    )
+                    torrent = load_torrent(torrent_path)
+                    LOGGER.info(
+                        "Torrent metadata: %s files, %s",
+                        len(torrent.files),
+                        format_bytes(torrent.total_bytes),
+                    )
+                except DownloadError as magnet_exc:
+                    LOGGER.warning("%s Falling back to the API route.", magnet_exc)
+                    torrent = None
+                    torrent_path = None
+            else:
+                LOGGER.warning("%s Falling back to the API route.", exc)
+                torrent = None
+                torrent_path = None
     elif not aria2_available():
         LOGGER.warning("aria2c is not installed; using the API route.")
     elif force_api:
@@ -1198,13 +1413,10 @@ def acquire(
                 item.status = "error"
                 item.route = "api"
 
-    client = ArcticShiftClient(
-        base_url=str(section["arctic_shift_base_url"]),
-        user_agent=str(section["user_agent"]),
-        timeout=float(section.get("api_timeout_seconds", 60)),
-        min_interval=float(section["api_min_interval_seconds"]),
-        max_retries=int(section["api_max_retries"]),
-        backoff_seconds=float(section["api_backoff_seconds"]),
+    client = build_api_client(cfg, section)
+    raw_limit = section["api_limit"]
+    api_limit: int | str = (
+        "auto" if isinstance(raw_limit, str) and raw_limit.strip().lower() == "auto" else int(raw_limit)
     )
     for item in api_items + [item for item in torrent_items if item.status == "error"]:
         try:
@@ -1213,8 +1425,9 @@ def acquire(
                 paths["raw"],
                 paths["checkpoint_dir"],
                 client,
-                limit=int(section["api_limit"]),
+                limit=api_limit,
                 overwrite=overwrite,
+                window_seconds=int(section.get("api_window_days", 90)) * 86_400,
             )
             item.status = result.status
             manifest.upsert(

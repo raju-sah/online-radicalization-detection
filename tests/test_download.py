@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import time
 import urllib.error
 from pathlib import Path
 from typing import Any
@@ -58,7 +59,14 @@ class FakeClient:
         self.pages = list(pages)
         self.calls: list[int | None] = []
 
-    def fetch_page(self, subreddit: str, kind: str, after: int | None, limit: int) -> list[dict[str, Any]]:
+    def fetch_page(
+        self,
+        subreddit: str,
+        kind: str,
+        after: int | None,
+        limit: int | str,
+        before: int | None = None,
+    ) -> list[dict[str, Any]]:
         self.calls.append(after)
         return self.pages.pop(0) if self.pages else []
 
@@ -86,9 +94,10 @@ def test_torrent_mapping_is_case_insensitive_and_indexes_selected_files(tmp_path
 
 def test_api_pagination_deduplicates_page_boundary(tmp_path: Path) -> None:
     target = DownloadTarget("incels", "comments")
+    now = int(time.time()) - 10_000
     pages = [
-        _records([("a", 100), ("b", 101), ("c", 102)]),
-        _records([("c", 102), ("d", 103)]),
+        _records([("a", now), ("b", now + 1), ("c", now + 2)]),
+        _records([("c", now + 2), ("d", now + 3)]),
     ]
     client = FakeClient(pages)
 
@@ -104,24 +113,25 @@ def test_api_pagination_deduplicates_page_boundary(tmp_path: Path) -> None:
     assert result.status == "complete"
     assert result.record_count == 4
     assert [record["id"] for record in _read_zst_records(tmp_path / target.filename)] == ["a", "b", "c", "d"]
-    assert client.calls == [None, 102]
+    assert client.calls[:2] == [None, now + 2]
     assert _load_checkpoint(tmp_path / "checkpoints" / "incels_comments.json")["complete"] is True
 
 
 def test_api_resume_truncates_uncommitted_bytes_and_appends(tmp_path: Path) -> None:
     target = DownloadTarget("incels", "comments")
+    now = int(time.time()) - 10_000
     final_path = tmp_path / target.filename
     checkpoint_path = tmp_path / "checkpoints" / target.filename.replace(".zst", ".json")
     checkpoint_path.parent.mkdir(parents=True)
     compressor = zstd.ZstdCompressor(level=3)
-    first_frame = compressor.compress(orjson.dumps(_records([("a", 100)])[0]) + b"\n")
+    first_frame = compressor.compress(orjson.dumps(_records([("a", now)])[0]) + b"\n")
     final_path.write_bytes(first_frame + b"uncommitted-garbage")
     checkpoint_path.write_text(
         json.dumps(
             {
-                "last_utc": 100,
+                "last_utc": now,
                 "count": 1,
-                "first_utc": 100,
+                "first_utc": now,
                 "recent_ids": ["a"],
                 "committed_bytes": len(first_frame),
                 "complete": False,
@@ -130,7 +140,7 @@ def test_api_resume_truncates_uncommitted_bytes_and_appends(tmp_path: Path) -> N
         encoding="utf-8",
     )
 
-    client = FakeClient([_records([("a", 100), ("b", 101)])])
+    client = FakeClient([_records([("a", now), ("b", now + 1)])])
     result = download_api_target(
         target,
         tmp_path,
@@ -143,7 +153,42 @@ def test_api_resume_truncates_uncommitted_bytes_and_appends(tmp_path: Path) -> N
     assert result.status == "complete"
     assert result.record_count == 2
     assert [record["id"] for record in _read_zst_records(final_path)] == ["a", "b"]
-    assert client.calls == [100]
+    assert client.calls[0] == now
+
+
+def test_api_auto_limit_continues_until_empty_page(tmp_path: Path) -> None:
+    target = DownloadTarget("incels", "comments")
+    now = int(time.time()) - 10_000
+    client = FakeClient(
+        [
+            _records([("a", now)]),
+            _records([("b", now + 1)]),
+            [],
+        ]
+    )
+
+    result = download_api_target(
+        target,
+        tmp_path,
+        tmp_path / "checkpoints",
+        client,  # type: ignore[arg-type]
+        limit="auto",
+        progress=False,
+    )
+
+    assert result.status == "complete"
+    assert result.record_count == 2
+    assert [record["id"] for record in _read_zst_records(tmp_path / target.filename)] == ["a", "b"]
+
+
+def test_time_series_total_sums_points(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = ArcticShiftClient("https://example.invalid", "test-agent", min_interval=0.0)
+    monkeypatch.setattr(
+        client,
+        "_request_json",
+        lambda url: {"data": [{"date": 1, "value": 3}, {"date": 2, "value": 4}]},
+    )
+    assert client.time_series_total("incels", "comments") == 7
 
 
 def test_empty_api_result_is_not_found_and_removes_file(tmp_path: Path) -> None:

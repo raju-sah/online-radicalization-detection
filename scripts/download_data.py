@@ -24,7 +24,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from radpath.config import load_config  # noqa: E402
-from radpath.download import acquire, configured_targets  # noqa: E402
+from radpath.download import (  # noqa: E402
+    acquire,
+    build_api_client,
+    configured_targets,
+    estimate_counts,
+    print_counts,
+)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -35,6 +41,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--dry-run",
         action="store_true",
         help="Print the route/size plan without downloading.",
+    )
+    parser.add_argument(
+        "--estimate",
+        action="store_true",
+        help="Print aggregate record counts from the Arctic Shift time series.",
     )
     parser.add_argument(
         "--yes",
@@ -83,6 +94,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.dry_run and args.yes:
         parser.error("--dry-run and --yes are mutually exclusive")
+    if args.estimate and args.yes:
+        parser.error("--estimate and --yes are mutually exclusive")
     return args
 
 
@@ -101,6 +114,10 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(str(exc)) from exc
     if not targets:
         raise SystemExit("No configured targets selected.")
+
+    if args.estimate:
+        print_counts(estimate_counts(targets, build_api_client(cfg)))
+        return
 
     dry_run = not args.yes
     plan = acquire(

@@ -108,7 +108,10 @@ Acquire data **only** through the configured script:
 # Show routes, sizes and disk headroom without downloading
 python scripts/download_data.py --dry-run
 
-# Download selected targets (disk guard requires 20 GiB free afterwards)
+# Show aggregate record counts for planning
+python scripts/download_data.py --estimate --only incels Braincels
+
+# Download selected targets (disk guard requires 5 GiB free afterwards)
 python scripts/download_data.py --yes --only incels Braincels
 
 # One record type only, or force the API route
@@ -124,9 +127,11 @@ endpoint is used. Requests are limited to at most one per second with
 exponential backoff; repeated blocks stop the run rather than evading limits.
 
 If the configured torrent is unavailable (for example the Academic Torrents
-page returns HTTP 404), the dry-run reports the API route instead. API sizes
-are unknown until downloaded, so review the disk guard before passing `--yes`
-with many targets.
+page returns HTTP 404), the script retries with the configured magnet URI and
+then falls back to the Arctic Shift API route. Magnet metadata fetching uses
+`aria2c --bt-metadata-only` and gives up after 10 minutes. API sizes are
+unknown until downloaded, so use `--estimate` and review the disk guard before
+passing `--yes` with many targets.
 
 Outputs are written to `data/raw/<subreddit>_<type>.zst`. API downloads are
 resumable through `data/raw/_checkpoints/`; a completed manifest with route,
