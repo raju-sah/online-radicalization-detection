@@ -9,10 +9,11 @@ communities, sustained deep engagement can be predicted from information
 available at or before an early cutoff. The output is aggregate research for
 a paper, **not** a tool that flags or profiles individuals.
 
-This repository currently implements **phase 1**: configuration, streaming
+This repository currently implements **phase 1** (configuration, streaming
 ingestion, cleaning, cohort and label construction, temporal splits,
-aggregate EDA, a synthetic fixture, and tests. Feature engineering beyond
-cohort counts, models, embeddings, and any UI are deliberately deferred.
+aggregate EDA, a synthetic fixture, and tests) and **phase 2** (controlled
+data acquisition). Feature engineering beyond cohort counts, models,
+embeddings, and any UI are deliberately deferred.
 
 ## Research design
 
@@ -101,16 +102,46 @@ Raw data and `.env` are gitignored. Never commit either.
 
 ## Raw data
 
-Download dumps manually from the Arctic Shift download tool
-(<https://arctic-shift.photon-reddit.com/download-tool>) or the Academic
-Torrents Reddit dumps (<https://academictorrents.com/>). This repository does
-**not** download data or call any external API. Respect the source terms of
-use and Reddit's terms.
+Acquire data **only** through the configured script:
 
-Place zstandard-compressed JSONL files under `data/raw/`. A common layout is
-one file per subreddit and record kind, named e.g.
-`incels_submissions.zst` and `incels_comments.zst`. The pipeline also accepts
-directories or `**` globs.
+```bash
+# Show routes, sizes and disk headroom without downloading
+python scripts/download_data.py --dry-run
+
+# Download selected targets (disk guard requires 20 GiB free afterwards)
+python scripts/download_data.py --yes --only incels Braincels
+
+# One record type only, or force the API route
+python scripts/download_data.py --yes --only lonely --type comments
+python scripts/download_data.py --yes --force-api --only lonely
+```
+
+The script accepts only subreddits listed in `configs/default.yaml`. It
+prefers selected files from the configured Academic Torrents bundle via
+`aria2c`, then falls back to Arctic Shift subreddit-level endpoints
+(`/api/posts/search`, `/api/comments/search`). No per-user or per-author
+endpoint is used. Requests are limited to at most one per second with
+exponential backoff; repeated blocks stop the run rather than evading limits.
+
+If the configured torrent is unavailable (for example the Academic Torrents
+page returns HTTP 404), the dry-run reports the API route instead. API sizes
+are unknown until downloaded, so review the disk guard before passing `--yes`
+with many targets.
+
+Outputs are written to `data/raw/<subreddit>_<type>.zst`. API downloads are
+resumable through `data/raw/_checkpoints/`; a completed manifest with route,
+byte count, record count and timestamp bounds is written to
+`data/raw/download_manifest.json`. Logs are username-free. For a long run:
+
+```bash
+setsid nohup python scripts/download_data.py --yes \
+  > reports/download.log 2>&1 &
+```
+
+Placing dumps manually is still supported if you obtained them through the
+approved sources. A common layout is one file per subreddit and record kind,
+named e.g. `incels_submissions.zst` and `incels_comments.zst`. The pipeline
+also accepts directories or `**` globs.
 
 Required submission fields:
 
@@ -242,11 +273,13 @@ src/radpath/
   config.py               YAML + .env loading, validation, paths, salt
   clean.py                deleted/bot/empty-text rules
   ingest.py               streaming .zst JSONL -> parquet, salted hashing
+  download.py             torrent/API acquisition, checkpoints, manifest
   cohort.py               t0, windows, eligibility, labels, split hook
   split.py                user-level temporal train/val/test
   eda.py                  aggregate summaries and plots
 scripts/
   make_fixture.py         synthetic .zst generator
+  download_data.py        the only data-acquisition entry point
   ingest.py
   build_cohort.py
   run_eda.py
@@ -254,6 +287,7 @@ tests/
   test_ingest.py
   test_clean.py
   test_cohort.py
+  test_download.py
   test_no_leakage.py
   test_split.py
 ```
