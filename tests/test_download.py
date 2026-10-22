@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import threading
 import time
 import urllib.error
 from pathlib import Path
@@ -17,7 +18,9 @@ import zstandard as zstd
 from radpath.download import (
     ArcticShiftClient,
     DownloadTarget,
+    SharedRateLimiter,
     _load_checkpoint,
+    configured_targets,
     download_api_target,
     load_torrent,
     map_torrent_files,
@@ -69,6 +72,66 @@ class FakeClient:
     ) -> list[dict[str, Any]]:
         self.calls.append(after)
         return self.pages.pop(0) if self.pages else []
+
+
+class FakeClock:
+    """Deterministic monotonic clock whose sleep advances time."""
+
+    def __init__(self, start: float = 100.0) -> None:
+        self.value = start
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.value
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.value += seconds
+
+
+def test_shared_rate_limiter_serializes_workers_with_mock_clock() -> None:
+    clock = FakeClock()
+    limiter = SharedRateLimiter(1.0, clock=clock.monotonic, sleep=clock.sleep)
+    barrier = threading.Barrier(3)
+    granted: list[float] = []
+
+    def worker() -> None:
+        barrier.wait()
+        granted.append(limiter.wait())
+
+    threads = [threading.Thread(target=worker) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert sorted(granted) == [100.0, 101.0, 102.0]
+    assert clock.sleeps == [1.0, 1.0]
+
+
+def test_download_priority_orders_targets() -> None:
+    cfg = {
+        "target_subreddits": ["MGTOW", "IncelsWithoutHate", "Braincels", "incels"],
+        "control_subreddits": ["IncelTears"],
+        "gateway_subreddits": ["ForeverAlone", "lonely"],
+    }
+    targets = configured_targets(cfg)
+    assert [(target.subreddit, target.kind) for target in targets] == [
+        ("incels", "comments"),
+        ("incels", "submissions"),
+        ("braincels", "comments"),
+        ("braincels", "submissions"),
+        ("incelswithouthate", "comments"),
+        ("incelswithouthate", "submissions"),
+        ("mgtow", "comments"),
+        ("mgtow", "submissions"),
+        ("inceltears", "comments"),
+        ("inceltears", "submissions"),
+        ("foreveralone", "comments"),
+        ("foreveralone", "submissions"),
+        ("lonely", "comments"),
+        ("lonely", "submissions"),
+    ]
 
 
 def test_torrent_mapping_is_case_insensitive_and_indexes_selected_files(tmp_path: Path) -> None:

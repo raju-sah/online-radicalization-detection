@@ -129,8 +129,9 @@ The script accepts only subreddits listed in `configs/default.yaml`. It
 prefers selected files from the configured Academic Torrents bundle via
 `aria2c`, then falls back to Arctic Shift subreddit-level endpoints
 (`/api/posts/search`, `/api/comments/search`). No per-user or per-author
-endpoint is used. Requests are limited to at most one per second with
-exponential backoff; repeated blocks stop the run rather than evading limits.
+endpoint is used. Requests are limited to at most one per second **globally**
+across all workers, with exponential backoff; repeated blocks stop the run
+rather than evading limits.
 
 If the configured torrent is unavailable (for example the Academic Torrents
 page returns HTTP 404), the script retries with the configured magnet URI and
@@ -146,9 +147,14 @@ byte count, record count and timestamp bounds is written to
 `data/raw/download_manifest.json`. Logs are username-free. For a long run:
 
 ```bash
-setsid nohup python scripts/download_data.py --yes \
+setsid nohup python scripts/download_data.py --yes --workers 3 \
   > reports/download.log 2>&1 &
 ```
+
+Each worker handles one subreddit/type pair at a time. The worker count does
+not raise the request rate: all workers share the one-request-per-second
+limiter. Default priority is incels, Braincels, IncelsWithoutHate, MGTOW,
+IncelTears, then ForeverAlone.
 
 Placing dumps manually is still supported if you obtained them through the
 approved sources. A common layout is one file per subreddit and record kind,

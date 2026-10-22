@@ -21,10 +21,12 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,6 +43,14 @@ from radpath.ingest import normalise_created_utc
 LOGGER = logging.getLogger(__name__)
 
 KINDS: tuple[str, ...] = ("comments", "submissions")
+DOWNLOAD_PRIORITY: tuple[str, ...] = (
+    "incels",
+    "braincels",
+    "incelswithouthate",
+    "mgtow",
+    "inceltears",
+    "foreveralone",
+)
 WINDOW_SECONDS = 90 * 86_400
 API_ENDPOINTS: dict[str, str] = {
     "comments": "/api/comments/search",
@@ -60,6 +70,41 @@ class ApiBlockedError(DownloadError):
 
 class ApiNotFoundError(DownloadError):
     """Raised when an API endpoint returns HTTP 404."""
+
+
+class SharedRateLimiter:
+    """Thread-safe global request limiter.
+
+    All workers must share one instance so the configured minimum interval is
+    enforced across the whole process, not per worker. ``wait`` sleeps while
+    holding the lock, which deliberately serialises callers: two workers can
+    never start requests less than ``min_interval`` seconds apart.
+    """
+
+    def __init__(
+        self,
+        min_interval: float,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self.min_interval = max(0.0, float(min_interval))
+        self._clock = clock
+        self._sleep = sleep
+        self._lock = threading.Lock()
+        self._next_allowed = 0.0
+
+    def wait(self) -> float:
+        """Block until this caller may request, returning the granted time."""
+        if self.min_interval <= 0:
+            return self._clock()
+        with self._lock:
+            now = self._clock()
+            delay = self._next_allowed - now
+            if delay > 0:
+                self._sleep(delay)
+                now = self._clock()
+            self._next_allowed = now + self.min_interval
+            return now
 
 
 @dataclass(frozen=True)
@@ -210,6 +255,16 @@ def configured_targets(
                 + ", ".join(sorted(unknown))
             )
         names = [name for name in names if name in requested]
+
+    priority = {name: index for index, name in enumerate(DOWNLOAD_PRIORITY)}
+    config_order = {name: index for index, name in enumerate(names)}
+    names = sorted(
+        names,
+        key=lambda name: (
+            priority.get(name, len(priority)),
+            config_order[name],
+        ),
+    )
 
     kinds = (kind,) if kind else KINDS
     return [DownloadTarget(name, record_kind) for name in names for record_kind in kinds]
@@ -603,6 +658,7 @@ class ArcticShiftClient:
         max_retries: int = 5,
         backoff_seconds: float = 2.0,
         sleep: Callable[[float], None] = time.sleep,
+        limiter: SharedRateLimiter | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.user_agent = user_agent
@@ -611,17 +667,14 @@ class ArcticShiftClient:
         self.max_retries = max(0, max_retries)
         self.backoff_seconds = max(0.0, backoff_seconds)
         self._sleep = sleep
-        self._last_request = 0.0
+        self.rate_limiter = limiter or SharedRateLimiter(
+            self.min_interval,
+            sleep=sleep,
+        )
 
     def _wait_for_rate_limit(self) -> None:
-        """Sleep so consecutive requests respect ``min_interval``."""
-        if self.min_interval <= 0:
-            return
-        elapsed = time.monotonic() - self._last_request
-        remaining = self.min_interval - elapsed
-        if remaining > 0:
-            self._sleep(remaining)
-        self._last_request = time.monotonic()
+        """Wait for this worker's turn under the shared global limiter."""
+        self.rate_limiter.wait()
 
     def fetch_page(
         self,
@@ -1102,8 +1155,12 @@ def complete_entry_exists(
 def build_api_client(
     cfg: Mapping[str, Any],
     section: Mapping[str, Any] | None = None,
+    limiter: SharedRateLimiter | None = None,
 ) -> ArcticShiftClient:
-    """Build a rate-limited Arctic Shift client from config."""
+    """Build a rate-limited Arctic Shift client from config.
+
+    Pass one ``limiter`` to every worker client when running concurrently.
+    """
     download_section = section or download_config(cfg)
     return ArcticShiftClient(
         base_url=str(download_section["arctic_shift_base_url"]),
@@ -1112,6 +1169,7 @@ def build_api_client(
         min_interval=float(download_section["api_min_interval_seconds"]),
         max_retries=int(download_section["api_max_retries"]),
         backoff_seconds=float(download_section["api_backoff_seconds"]),
+        limiter=limiter,
     )
 
 
@@ -1283,6 +1341,26 @@ def _save_torrent_manifest(
     )
 
 
+def _run_api_item(
+    item: PlanItem,
+    paths: Mapping[str, Path],
+    client: ArcticShiftClient,
+    api_limit: int | str,
+    overwrite: bool,
+    window_seconds: int,
+) -> ApiResult:
+    """Run one API target; used by the shared worker pool."""
+    return download_api_target(
+        item.target,
+        paths["raw"],
+        paths["checkpoint_dir"],
+        client,
+        limit=api_limit,
+        overwrite=overwrite,
+        window_seconds=window_seconds,
+    )
+
+
 def acquire(
     cfg: Mapping[str, Any],
     targets: Sequence[DownloadTarget],
@@ -1292,8 +1370,15 @@ def acquire(
     min_free_gb: float | None = None,
     ignore_disk_check: bool = False,
     refresh_torrent: bool = False,
+    workers: int = 3,
 ) -> list[PlanItem]:
-    """Plan and optionally execute downloads for the selected targets."""
+    """Plan and optionally execute downloads for the selected targets.
+
+    API targets run in a small thread pool. Every worker shares one
+    :class:`SharedRateLimiter`, so the configured minimum interval is a global
+    request rate rather than a per-worker rate.
+    """
+    workers = max(1, int(workers))
     section = download_config(cfg)
     paths = download_paths(cfg, section)
     manifest = DownloadManifest(paths["manifest"])
@@ -1413,56 +1498,89 @@ def acquire(
                 item.status = "error"
                 item.route = "api"
 
-    client = build_api_client(cfg, section)
+    limiter = SharedRateLimiter(
+        float(section["api_min_interval_seconds"])
+    )
+    client = build_api_client(cfg, section, limiter=limiter)
     raw_limit = section["api_limit"]
     api_limit: int | str = (
         "auto" if isinstance(raw_limit, str) and raw_limit.strip().lower() == "auto" else int(raw_limit)
     )
-    for item in api_items + [item for item in torrent_items if item.status == "error"]:
-        try:
-            result = download_api_target(
-                item.target,
-                paths["raw"],
-                paths["checkpoint_dir"],
+    api_targets = api_items + [item for item in torrent_items if item.status == "error"]
+    LOGGER.info(
+        "Starting %d API target(s) with %d worker(s); global limit %.2fs/request",
+        len(api_targets),
+        min(workers, max(1, len(api_targets))),
+        limiter.min_interval,
+    )
+    blocked_error: ApiBlockedError | None = None
+    executor = ThreadPoolExecutor(
+        max_workers=workers,
+        thread_name_prefix="radpath-download",
+    )
+    try:
+        futures = {
+            executor.submit(
+                _run_api_item,
+                item,
+                paths,
                 client,
-                limit=api_limit,
-                overwrite=overwrite,
-                window_seconds=int(section.get("api_window_days", 90)) * 86_400,
-            )
-            item.status = result.status
-            manifest.upsert(
-                manifest_entry(
-                    item.target,
-                    "api",
-                    paths["raw"] / item.target.filename,
-                    result.status,
-                    result.bytes,
-                    result.record_count,
-                    result.first_created_utc,
-                    result.last_created_utc,
+                api_limit,
+                overwrite,
+                int(section.get("api_window_days", 90)) * 86_400,
+            ): item
+            for item in api_targets
+        }
+        for future in as_completed(futures):
+            item = futures[future]
+            try:
+                result = future.result()
+                item.status = result.status
+                manifest.upsert(
+                    manifest_entry(
+                        item.target,
+                        "api",
+                        paths["raw"] / item.target.filename,
+                        result.status,
+                        result.bytes,
+                        result.record_count,
+                        result.first_created_utc,
+                        result.last_created_utc,
+                    )
                 )
-            )
-            LOGGER.info(
-                "API %s/%s: %s (%d records)",
-                item.target.subreddit,
-                item.target.kind,
-                result.status,
-                result.record_count,
-            )
-        except ApiBlockedError as exc:
-            LOGGER.error("API blocked repeatedly; stopping downloads: %s", exc)
-            raise SystemExit(2)
-        except FileExistsError as exc:
-            LOGGER.error("%s", exc)
-            item.status = "error"
-        except Exception as exc:
-            LOGGER.error(
-                "API download failed for %s/%s: %s",
-                item.target.subreddit,
-                item.target.kind,
-                exc,
-            )
-            item.status = "error"
+                LOGGER.info(
+                    "API %s/%s: %s (%d records)",
+                    item.target.subreddit,
+                    item.target.kind,
+                    result.status,
+                    result.record_count,
+                )
+            except ApiBlockedError as exc:
+                blocked_error = exc
+                LOGGER.error(
+                    "API blocked repeatedly for %s/%s; stopping downloads: %s",
+                    item.target.subreddit,
+                    item.target.kind,
+                    exc,
+                )
+                for pending in futures:
+                    if pending is not future:
+                        pending.cancel()
+            except FileExistsError as exc:
+                LOGGER.error("%s", exc)
+                item.status = "error"
+            except Exception as exc:
+                LOGGER.error(
+                    "API download failed for %s/%s: %s",
+                    item.target.subreddit,
+                    item.target.kind,
+                    exc,
+                )
+                item.status = "error"
+    finally:
+        executor.shutdown(wait=True, cancel_futures=blocked_error is not None)
+    if blocked_error is not None:
+        raise SystemExit(2)
 
     print_plan(plan, shutil.disk_usage(paths["raw"]).free, paths["raw"])
     return plan

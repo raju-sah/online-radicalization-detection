@@ -75,6 +75,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Replace existing outputs that are not marked complete.",
     )
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=3,
+        help="Number of API worker threads (default: 3). Each handles a different subreddit/type.",
+    )
+    parser.add_argument(
         "--min-free-gb",
         type=float,
         default=None,
@@ -96,6 +102,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--dry-run and --yes are mutually exclusive")
     if args.estimate and args.yes:
         parser.error("--estimate and --yes are mutually exclusive")
+    if args.workers < 1:
+        parser.error("--workers must be at least 1")
     return args
 
 
@@ -129,6 +137,7 @@ def main(argv: list[str] | None = None) -> None:
         min_free_gb=args.min_free_gb,
         ignore_disk_check=args.ignore_disk_check,
         refresh_torrent=args.refresh_torrent,
+        workers=args.workers,
     )
     if dry_run:
         print("Dry run only. Pass --yes to download.")
