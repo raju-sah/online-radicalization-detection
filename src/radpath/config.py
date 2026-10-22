@@ -103,6 +103,34 @@ def validate_config(cfg: dict[str, Any]) -> None:
     if not isinstance(controls, list):
         raise ValueError("control_subreddits must be a list")
 
+    overrides = cfg.get("coverage_overrides", {})
+    if not isinstance(overrides, dict):
+        raise ValueError("coverage_overrides must be a mapping")
+    for name, override in overrides.items():
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("coverage_overrides keys must be subreddit names")
+        if not isinstance(override, dict):
+            raise ValueError(f"coverage_overrides.{name} must be a mapping")
+        if set(override) - {"start_utc", "end_utc"}:
+            raise ValueError(
+                f"coverage_overrides.{name} may only define start_utc and end_utc"
+            )
+
+    near_days = cfg.get("coverage", {}).get("near_start_days", 30)
+    if int(near_days) < 0:
+        raise ValueError("coverage.near_start_days must be >= 0")
+
+    robustness = cfg.get("robustness", {})
+    if robustness:
+        for key in ("min_contributions", "min_active_weeks", "followup_days"):
+            values = robustness.get(key, [])
+            if not isinstance(values, list) or not values:
+                raise ValueError(f"robustness.{key} must be a non-empty list")
+            if any(int(value) < 1 for value in values):
+                raise ValueError(f"robustness.{key} values must be >= 1")
+        if not isinstance(robustness.get("comments_only", True), bool):
+            raise ValueError("robustness.comments_only must be a boolean")
+
 
 def _resolve_project_path(path: str | Path) -> Path:
     """Resolve ``path`` against the repository root when relative."""
