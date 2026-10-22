@@ -180,6 +180,36 @@ def test_api_pagination_deduplicates_page_boundary(tmp_path: Path) -> None:
     assert _load_checkpoint(tmp_path / "checkpoints" / "incels_comments.json")["complete"] is True
 
 
+def test_api_pagination_advances_past_duplicate_only_page(tmp_path: Path) -> None:
+    target = DownloadTarget("incels", "submissions")
+    now = int(time.time()) - 10_000
+    client = FakeClient(
+        [
+            _records([("a", now), ("b", now + 1)]),
+            _records([("b", now + 1), ("b", now + 1)]),
+            _records([("c", now + 2)]),
+        ]
+    )
+
+    result = download_api_target(
+        target,
+        tmp_path,
+        tmp_path / "checkpoints",
+        client,  # type: ignore[arg-type]
+        limit=2,
+        progress=False,
+    )
+
+    assert result.status == "complete"
+    assert result.record_count == 3
+    assert [record["id"] for record in _read_zst_records(tmp_path / target.filename)] == [
+        "a",
+        "b",
+        "c",
+    ]
+    assert client.calls[:3] == [None, now + 1, now + 2]
+
+
 def test_api_resume_truncates_uncommitted_bytes_and_appends(tmp_path: Path) -> None:
     target = DownloadTarget("incels", "comments")
     now = int(time.time()) - 10_000

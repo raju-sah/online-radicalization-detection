@@ -930,6 +930,7 @@ def download_api_target(
     committed = int(checkpoint.get("committed_bytes", 0))
     complete = False
     not_found = False
+    duplicate_advances = 0
 
     compressor = zstd.ZstdCompressor(level=3)
     bar = tqdm(
@@ -980,6 +981,7 @@ def download_api_target(
 
                 max_page_ts = max(page_timestamps) if page_timestamps else None
                 if new_records:
+                    duplicate_advances = 0
                     payload = b"".join(orjson.dumps(record) + b"\n" for record in new_records)
                     compressed = compressor.compress(payload)
                     output.write(compressed)
@@ -1018,8 +1020,36 @@ def download_api_target(
                         after = window_end
                         window_end += window_seconds
                         continue
-                if max_page_ts is None or (
-                    previous_after is not None and max_page_ts <= int(previous_after)
+                if not new_records and page and after is not None:
+                    # Some 422 boundary retries return only records already
+                    # stored in the previous page. Advance one second instead
+                    # of stalling forever, but do not turn this into an
+                    # unbounded scan.
+                    if duplicate_advances >= 5:
+                        LOGGER.warning(
+                            "Pagination still duplicate-only for %s/%s at after=%s; "
+                            "stopping incomplete.",
+                            target.subreddit,
+                            target.kind,
+                            after,
+                        )
+                        complete = False
+                        break
+                    next_after = int(after) + 1
+                    LOGGER.warning(
+                        "Page at after=%s for %s/%s contained only duplicates; "
+                        "advancing to %s.",
+                        after,
+                        target.subreddit,
+                        target.kind,
+                        next_after,
+                    )
+                    after = next_after
+                    duplicate_advances += 1
+                    continue
+                if not new_records and (
+                    max_page_ts is None
+                    or (previous_after is not None and max_page_ts <= int(previous_after))
                 ):
                     LOGGER.warning(
                         "Pagination stalled for %s/%s at after=%s; stopping incomplete.",
