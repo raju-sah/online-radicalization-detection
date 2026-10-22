@@ -1,0 +1,83 @@
+# radpath default configuration.
+# All research parameters live here; nothing below should be hard-coded in
+# source files. Paths are resolved relative to the repository root.
+
+paths:
+  raw: data/raw
+  interim: data/interim
+  processed: data/processed
+  reports: reports
+
+# Communities whose first contribution defines cohort entry (t0).
+target_subreddits:
+  - incels
+  - Braincels
+  - MGTOW
+  - IncelsWithoutHate
+
+# Contrast communities: ingested and available for later comparison/EDA,
+# but they do NOT define cohort entry.
+control_subreddits:
+  - IncelTears
+  - ForeverAlone
+
+# "Gateway" communities used only for Task B pre-entry features.
+gateway_subreddits:
+  - ForeverAlone
+  - lonely
+  - socialanxiety
+  - dating_advice
+  - short
+  - Tinder
+
+# Task A: feature window = first `first_n` target contributions, capped at
+# `days` days after t0. Cutoff = min(timestamp of Nth contribution,
+# t0 + days). If the Nth contribution arrives later than `days`, the cutoff
+# is t0 + days.
+feature_window:
+  first_n: 5
+  days: 14
+
+# Task B: gateway activity in the `pre_entry_days` days before t0.
+pre_entry_days: 180
+
+# Label window, measured strictly after each task's feature cutoff.
+followup_days: 90
+
+# Deep engagement: both thresholds must be met inside the label window.
+deep_min_contributions: 20
+deep_min_active_weeks: 4
+
+# End of observation. `null` = timestamp of the latest ingested record.
+# Note: this is the latest record across configured subreddits, not Reddit
+# as a whole; set explicitly if your dumps have different extents.
+data_end_utc: null
+
+# User-level temporal split, ordered by entry date (earliest -> latest).
+split:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+
+seed: 42
+
+ingest:
+  batch_size: 20000
+  # Keep only target + control + gateway subreddits (plus extra_subreddits)
+  # while streaming, to keep interim files small.
+  restrict_to_config_subreddits: true
+  extra_subreddits: []
+
+clean:
+  # Case-insensitive suffix used to drop likely bots (e.g. "ExampleBot").
+  bot_name_suffixes: ["bot"]
+  # Exact, case-insensitive names dropped in addition to the suffix rule.
+  extra_bot_names:
+    - AutoModerator
+    - BotDefense
+    - RemindMeBot
+  deleted_values: ["[deleted]", "[removed]"]
+  drop_empty_text: true
+
+eda:
+  top_n_subreddits: 10

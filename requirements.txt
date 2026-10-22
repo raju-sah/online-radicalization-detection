@@ -1,0 +1,11 @@
+polars>=1.0,<2
+pyarrow>=16
+zstandard>=0.22
+orjson>=3.9
+PyYAML>=6.0
+python-dotenv>=1.0
+tqdm>=4.66
+scikit-learn>=1.4
+lightgbm>=4.3
+matplotlib>=3.8
+pytest>=8.0
