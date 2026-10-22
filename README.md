@@ -101,9 +101,11 @@ Raw data and `.env` are gitignored. Never commit either.
 
 ## Raw data
 
-Download dumps manually from Arctic Shift or the Academic Torrents Reddit
-dumps. This repository does **not** download data or call any external API.
-Respect the source terms of use and Reddit's terms.
+Download dumps manually from the Arctic Shift download tool
+(<https://arctic-shift.photon-reddit.com/download-tool>) or the Academic
+Torrents Reddit dumps (<https://academictorrents.com/>). This repository does
+**not** download data or call any external API. Respect the source terms of
+use and Reddit's terms.
 
 Place zstandard-compressed JSONL files under `data/raw/`. A common layout is
 one file per subreddit and record kind, named e.g.
