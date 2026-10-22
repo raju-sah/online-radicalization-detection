@@ -115,3 +115,9 @@ synthetic fixtures only; it must not read real data or write to
 - The `incels/comments` worker died at 21:39 local with a persistent HTTP 422 at after=1476482376 (checkpoint count 86,214, not complete). Other workers continue under PID 3071601 and are not touched.
 - Fix committed (not yet running; the live process loads old code): on persistent 422 the client now tries limit=100/10 at the same cursor, then skips forward 1/10/60 s and records the skip in `client.skipped_gaps` (logged as WARNING "coverage gap"). Decision: a gap of seconds is accepted and will be reported in the data section.
 - Next action: when PID 3071601 exits, rerun `scripts/download_data.py --yes --force-api --workers 3` to resume from checkpoints (not before, per instruction not to restart).
+
+## Download restart (2026-10-23 ~02:45 local)
+
+- First run (PID 3071601) exited with HTTP 422 errors on 17 of 22 files (log: `reports/download_run1.log`); incels/submissions, incelswithouthate/submissions complete.
+- Resumed from checkpoints with the patched 422 handler: PID 3273123 (`--workers 3`), disk guard restarted. ~25-30 rec/s per stream.
+- Phase 2 smoke test runs when incels comments+submissions are both complete.
