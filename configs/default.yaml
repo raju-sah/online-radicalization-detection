@@ -124,3 +124,17 @@ download:
   torrent_metadata_timeout_seconds: 600
   # Refuse --yes when the known download would leave less than this free.
   min_free_gb: 5
+
+# Modelling (Phase 3+). Tuning uses the validation split only; each final
+# configuration is evaluated on test once and logged to reports/test_log.csv.
+models:
+  seed: 42
+  bootstrap_n: 1000
+  ece_bins: 10
+  leakage_auroc_flag: 0.95
+  lr_c_grid: [0.01, 0.1, 1.0, 10.0]
+  lgbm_grid:
+    - {num_leaves: 7, n_estimators: 100, learning_rate: 0.05}
+    - {num_leaves: 15, n_estimators: 200, learning_rate: 0.05}
+  lgbm_common: {min_child_samples: 20, subsample: 0.8, subsample_freq: 1, colsample_bytree: 0.8}
+  tfidf: {max_features: 20000, min_df: 3, ngram_range: [1, 2], sublinear_tf: true}

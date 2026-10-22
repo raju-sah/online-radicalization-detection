@@ -232,6 +232,7 @@ def build_fixture(
     out_dir: Path,
     seed: int = 42,
     n_users: int = 140,
+    entry_span_days: int = ENTRY_SPAN_DAYS,
 ) -> dict[str, Any]:
     """Write a synthetic raw dataset and return an aggregate summary.
 
@@ -263,7 +264,7 @@ def build_fixture(
             t0 = FIXTURE_DATA_END - 20 * DAY + rng.randint(0, 10 * DAY)
         else:
             fraction = index / max(1, n_users - n_late)
-            t0 = FIXTURE_START + int(fraction * ENTRY_SPAN_DAYS * DAY) + rng.randint(0, 2 * DAY)
+            t0 = FIXTURE_START + int(fraction * entry_span_days * DAY) + rng.randint(0, 2 * DAY)
         _add_user_records(
             records,
             rng,
@@ -313,13 +314,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--users", type=int, default=140)
+    parser.add_argument("--entry-span-days", type=int, default=ENTRY_SPAN_DAYS)
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> None:
     """Generate the fixture and print an aggregate summary."""
     args = parse_args(argv)
-    summary = build_fixture(args.out_dir, seed=args.seed, n_users=args.users)
+    summary = build_fixture(args.out_dir, seed=args.seed, n_users=args.users, entry_span_days=args.entry_span_days)
     print("SYNTHETIC FIXTURE (not real Reddit data)")
     for key, value in summary.items():
         print(f"  {key}: {value}")

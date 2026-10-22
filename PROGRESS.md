@@ -12,7 +12,7 @@ are in `PREREGISTRATION.md`.
 |---|---|---|
 | 1. Download speed-up + commit | done | Shared 1 req/s limiter, `--workers 3`, priority ordering, duplicate-page advance; download running. |
 | 2. r/incels smoke test | pending | Not run: `incels_comments` and `incels_submissions` are not complete. `/tmp/radpath-smoke` is empty. Phase 3 proceeds first, as allowed by the roadmap. |
-| 3. Synthetic features + baselines | in progress | Started after Phase 1 record was written. |
+| 3. Synthetic features + baselines | done | `features.py`, `models.py`, `scripts/run_models.py`; verified on a 4,000-user synthetic fixture. Tag `phase-3`. |
 | 4. Full real-data run | blocked | Waiting for all target and control downloads. |
 | 5. Real-data baselines | pending | Depends on Phase 4 and Gate 1. |
 | 6. Sentence embeddings | pending | Depends on Phase 5. |
@@ -99,3 +99,13 @@ synthetic fixtures only; it must not read real data or write to
 - Phase 4 waits on all target and control downloads.
 - Any test AUROC above 0.95 on Task A or B is a mandatory stop for leakage
   investigation.
+
+## Phase 3 record (done, 2026-10-22)
+
+- Preregistration Amendment 1: targets = incels, Braincels, IncelsWithoutHate; MGTOW moved to `control_subreddits` (comparison only). Commit `f58cf67`.
+- New: `src/radpath/features.py` (activity, interaction, VADER/length text stats, TF-IDF docs, Task B gateway counts and recency; all windowed by cutoff, tested in `tests/test_features.py`), `src/radpath/models.py` (majority, activity-count LR, behavioural LightGBM, TF-IDF LR, combined LR; class weights only; hyperparameters and F1 threshold chosen on validation; ECE; 1,000-resample user-level bootstrap CIs; `reports/test_log.csv` guard that refuses a second test scoring of the same final config), `scripts/run_models.py`, `models:` block in `configs/default.yaml`.
+- Synthetic run (scratchpad, not real data): Task A activity-count models reach AUROC/AUPRC 1.0 because the fixture's engagement profiles are deterministic in early volume; flagged by `leakage_flag` as designed. Not evidence about real data. Task B synthetic AUPRC ~0.58-0.62 vs prevalence 0.57.
+- `make_fixture.py` gained `--entry-span-days`; synthetic runs need a wide entry span and `robustness.followup_days: [90]` or the 180-day embargo empties validation.
+- Tests: 67 passed.
+- Real runs must not use `--dataset synthetic*`; real runs exit with STOP if any test AUROC > 0.95.
+- Download (PID 3071601) still running; checkpoints exist for incels, braincels, incelswithouthate (comments + submissions); disk 22 GiB free.
