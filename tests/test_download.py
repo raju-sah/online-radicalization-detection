@@ -342,3 +342,20 @@ def test_retry_after_429_then_success(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.fetch_page("incels", "comments", None, 100) == []
     assert calls["count"] == 3
     assert sleeps == [0.0, 0.0]
+
+
+def test_persistent_422_skips_forward_and_records_gap(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_urlopen(request: Any, timeout: float) -> _Response:
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(request.full_url).query)
+        if int(query["after"][0]) < 1_000:  # poisoned cursor and the shifts before it
+            raise urllib.error.HTTPError(request.full_url, 422, "bad", {}, None)
+        return _Response(b'{"data": [{"id": "x", "created_utc": 1001}]}')
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    client = ArcticShiftClient(
+        "https://example.invalid", "test-agent", min_interval=0.0,
+        max_retries=0, backoff_seconds=0.0, sleep=lambda _s: None,
+    )
+    page = client.fetch_page("incels", "comments", 999, "auto")
+    assert [row["id"] for row in page] == ["x"]
+    assert client.skipped_gaps == [("incels", "comments", 999, 1000)]

@@ -109,3 +109,9 @@ synthetic fixtures only; it must not read real data or write to
 - Tests: 67 passed.
 - Real runs must not use `--dataset synthetic*`; real runs exit with STOP if any test AUROC > 0.95.
 - Download (PID 3071601) still running; checkpoints exist for incels, braincels, incelswithouthate (comments + submissions); disk 22 GiB free.
+
+## Download issue (2026-10-22 ~16:20Z)
+
+- The `incels/comments` worker died at 21:39 local with a persistent HTTP 422 at after=1476482376 (checkpoint count 86,214, not complete). Other workers continue under PID 3071601 and are not touched.
+- Fix committed (not yet running; the live process loads old code): on persistent 422 the client now tries limit=100/10 at the same cursor, then skips forward 1/10/60 s and records the skip in `client.skipped_gaps` (logged as WARNING "coverage gap"). Decision: a gap of seconds is accepted and will be reported in the data section.
+- Next action: when PID 3071601 exits, rerun `scripts/download_data.py --yes --force-api --workers 3` to resume from checkpoints (not before, per instruction not to restart).

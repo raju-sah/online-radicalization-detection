@@ -667,6 +667,7 @@ class ArcticShiftClient:
         self.max_retries = max(0, max_retries)
         self.backoff_seconds = max(0.0, backoff_seconds)
         self._sleep = sleep
+        self.skipped_gaps: list[tuple[Any, str, int, int]] = []
         self.rate_limiter = limiter or SharedRateLimiter(
             self.min_interval,
             sleep=sleep,
@@ -729,7 +730,11 @@ class ArcticShiftClient:
                     if "HTTP 422" not in str(retry_exc):
                         raise
             if not retried:
-                raise
+                # Persistent 422: try smaller explicit pages at the original
+                # cursor (no data loss), then skip forward a few seconds. A
+                # skipped window is logged and kept in ``skipped_gaps`` so the
+                # coverage gap is documented rather than silent.
+                payload = self._recover_from_422(url_params=params, after=int(after), kind=kind, original=exc)
         if isinstance(payload, dict):
             data = payload.get("data", [])
         elif isinstance(payload, list):
@@ -739,6 +744,39 @@ class ArcticShiftClient:
         if not isinstance(data, list):
             raise DownloadError("Arctic Shift response 'data' is not a list.")
         return data
+
+    def _recover_from_422(
+        self,
+        url_params: dict[str, Any],
+        after: int,
+        kind: str,
+        original: DownloadError,
+    ) -> Any:
+        """Recover from a persistent HTTP 422 at one cursor, or re-raise."""
+        def build(overrides: dict[str, Any]) -> str:
+            merged = {**url_params, **overrides}
+            return f"{self.base_url}{API_ENDPOINTS[kind]}?{urllib.parse.urlencode(merged)}"
+
+        for small in (100, 10):
+            LOGGER.warning("HTTP 422 persists at after=%s; trying limit=%s", after, small)
+            try:
+                return self._request_json(build({"after": after, "limit": small}))
+            except DownloadError as exc:
+                if "HTTP 422" not in str(exc):
+                    raise
+        for skip in (1, 10, 60):
+            LOGGER.warning(
+                "HTTP 422 persists at after=%s; skipping forward %ss (coverage gap)", after, skip
+            )
+            try:
+                payload = self._request_json(build({"after": after + skip, "limit": 100}))
+            except DownloadError as exc:
+                if "HTTP 422" not in str(exc):
+                    raise
+                continue
+            self.skipped_gaps.append((url_params.get("subreddit"), kind, after, after + skip))
+            return payload
+        raise original
 
     def time_series_total(self, subreddit: str, kind: str, precision: str = "year") -> int | None:
         """Return an aggregate record count, or None when no series is available.
