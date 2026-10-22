@@ -105,6 +105,7 @@ def test_cohort_membership_and_cutoffs(cohort_frame, params: CohortParams) -> No
     assert a["label_weeks_a"] == _week_count(post_a, T0 + 4)
     assert a["label_deep_a"] is True
     assert a["label_n_b"] == 29
+    assert a["task_b_included"] is True
     assert a["label_deep_b"] is True
 
     assert a["n_gateway_pre_b"] == 3
@@ -116,7 +117,8 @@ def test_cohort_membership_and_cutoffs(cohort_frame, params: CohortParams) -> No
     assert b["label_n_a"] == 5
     assert b["label_deep_a"] is False
     assert b["label_n_b"] == 10
-    assert b["label_deep_b"] is False
+    assert b["task_b_included"] is False
+    assert b["label_deep_b"] is None
 
     # The 14-day cap applies when the Nth contribution has not arrived.
     assert c["cutoff_a"] == T0 + 150 * DAY + 14 * DAY
@@ -124,7 +126,8 @@ def test_cohort_membership_and_cutoffs(cohort_frame, params: CohortParams) -> No
     assert c["label_n_a"] == 1
     assert c["label_deep_a"] is False
     assert c["label_n_b"] == 4
-    assert c["label_deep_b"] is False
+    assert c["task_b_included"] is False
+    assert c["label_deep_b"] is None
 
     # Ineligible users get null labels, not negative labels.
     assert d["eligible_a"] is False
@@ -212,3 +215,78 @@ def test_empty_target_set_returns_empty_cohort(
     )
     assert cohort.height == 0
     assert "cutoff_a" in cohort.columns
+
+
+def test_target_ending_mid_cohort_truncates_only_affected_windows(
+    make_contributions, params: CohortParams
+) -> None:
+    rows: list[dict[str, Any]] = []
+    coverage = {
+        "incels": (T0, T0 + 100 * DAY),
+        "braincels": (T0, T0 + 500 * DAY),
+    }
+
+    def add_user(user: str, subreddit: str, t0: int) -> None:
+        for index in range(5):
+            rows.append(
+                {"author_hash": user, "subreddit": subreddit, "created_utc": t0 + index}
+            )
+        rows.append(
+            {
+                "author_hash": user,
+                "subreddit": "lonely",
+                "created_utc": t0 - 10 * DAY,
+            }
+        )
+
+    add_user("early", "incels", T0)
+    add_user("mid", "braincels", T0 + 50 * DAY)
+    add_user("late", "braincels", T0 + 200 * DAY)
+
+    cohort = build_cohort(
+        make_contributions(rows),
+        params,
+        target_subreddits=["incels", "braincels"],
+        gateway_subreddits=["lonely"],
+        coverage=coverage,
+    )
+    by_user = {row["author_hash"]: row for row in cohort.iter_rows(named=True)}
+
+    assert by_user["early"]["eligible_a"] is True
+    assert by_user["early"]["near_coverage_start"] is True
+    assert by_user["early"]["label_deep_a"] is not None
+
+    assert by_user["mid"]["eligible_a"] is False
+    assert by_user["mid"]["ineligible_reason_a"] == "followup_truncated_by_coverage_end"
+    assert by_user["mid"]["label_deep_a"] is None
+    assert by_user["mid"]["near_coverage_start"] is False
+
+    # incels had already ended before this user's window, so it cannot truncate it.
+    assert by_user["late"]["eligible_a"] is True
+    assert by_user["late"]["ineligible_reason_a"] is None
+    assert by_user["late"]["near_coverage_start"] is False
+
+
+def test_config_generates_robustness_and_comments_only_variants() -> None:
+    cfg = {
+        "feature_window": {"first_n": 5, "days": 14},
+        "pre_entry_days": 180,
+        "followup_days": 90,
+        "deep_min_contributions": 20,
+        "deep_min_active_weeks": 4,
+        "robustness": {
+            "min_contributions": [10, 20, 50],
+            "min_active_weeks": [3, 4, 8],
+            "followup_days": [90, 180],
+            "comments_only": True,
+        },
+    }
+    params = CohortParams.from_config(cfg)
+    names = {variant.name for variant in params.all_variants()}
+    assert params.primary_variant.name == "c20_w4_f90"
+    assert "c10_w3_f180" in names
+    assert "c50_w8_f90" in names
+    assert "c20_w4_f90_comments" in names
+    assert len(names) == 19  # 18 grid cells plus one comments-only variant
+    comments = next(v for v in params.all_variants() if v.comments_only)
+    assert comments.kinds == ("comment",)

@@ -49,6 +49,7 @@ def make_contributions():
                     "selftext": row.get("selftext", ""),
                     "body": row.get("body", "synthetic"),
                     "text": row.get("text", "synthetic"),
+                    "has_text": bool(row.get("has_text", True)),
                     "score": int(row.get("score", 0)),
                     "num_comments": int(row.get("num_comments", 0)),
                     "link_id": row.get("link_id"),

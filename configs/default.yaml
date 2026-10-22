@@ -19,7 +19,6 @@ target_subreddits:
 # but they do NOT define cohort entry.
 control_subreddits:
   - IncelTears
-  - ForeverAlone
 
 # "Gateway" communities used only for Task B pre-entry features.
 gateway_subreddits:
@@ -45,15 +44,35 @@ pre_entry_days: 180
 followup_days: 90
 
 # Deep engagement: both thresholds must be met inside the label window.
+# This is the pre-specified primary label.
 deep_min_contributions: 20
 deep_min_active_weeks: 4
 
-# End of observation. `null` = timestamp of the latest ingested record.
-# Note: this is the latest record across configured subreddits, not Reddit
-# as a whole; set explicitly if your dumps have different extents.
-data_end_utc: null
+# Robustness grid. Every combination is generated as a named label variant,
+# alongside a comments-only version of the primary label.
+robustness:
+  min_contributions: [10, 20, 50]
+  min_active_weeks: [3, 4, 8]
+  followup_days: [90, 180]
+  comments_only: true
+
+# Per-subreddit observation coverage is written to
+# data/interim/coverage.parquet during ingestion. Manual overrides may be
+# supplied for known bans/quarantine dates, e.g.
+# coverage_overrides:
+#   Braincels: {start_utc: "2017-01-01", end_utc: "2019-10-01"}
+coverage_overrides: {}
+coverage:
+  # Users entering within this many days of the earliest target coverage are
+  # flagged `near_coverage_start` and excluded from the sensitivity analysis.
+  near_start_days: 30
+sensitivity:
+  exclude_near_coverage_start: true
 
 # User-level temporal split, ordered by entry date (earliest -> latest).
+# Fractions are resolved to calendar-date thresholds on t0. Users sharing a
+# date always share a split, and label windows crossing a boundary are
+# embargoed.
 split:
   train: 0.70
   val: 0.15
@@ -77,7 +96,8 @@ clean:
     - BotDefense
     - RemindMeBot
   deleted_values: ["[deleted]", "[removed]"]
-  drop_empty_text: true
+  # Warn when the suffix rule drops more than this share of distinct authors.
+  bot_author_warn_fraction: 0.01
 
 eda:
   top_n_subreddits: 10

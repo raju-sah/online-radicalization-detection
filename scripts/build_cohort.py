@@ -22,9 +22,13 @@ from radpath import __version__  # noqa: E402
 from radpath.cohort import (  # noqa: E402
     CohortParams,
     build_cohort,
-    resolve_data_end,
 )
 from radpath.config import ensure_data_dirs, load_config  # noqa: E402
+from radpath.coverage import (  # noqa: E402
+    apply_coverage_overrides,
+    coverage_from_contributions,
+    load_coverage,
+)
 from radpath.ingest import load_contributions  # noqa: E402
 
 
@@ -53,13 +57,18 @@ def main(argv: list[str] | None = None) -> None:
         )
 
     params = CohortParams.from_config(cfg)
-    data_end = resolve_data_end(contributions, cfg.get("data_end_utc"))
+    coverage = load_coverage(paths["interim"])
+    if coverage.height == 0:
+        coverage = coverage_from_contributions(
+            contributions, cfg["target_subreddits"]
+        )
+    coverage = apply_coverage_overrides(coverage, cfg.get("coverage_overrides"))
     cohort = build_cohort(
         contributions=contributions,
         params=params,
         target_subreddits=cfg["target_subreddits"],
         gateway_subreddits=cfg["gateway_subreddits"],
-        data_end_utc=data_end,
+        coverage=coverage,
         split_fractions=cfg["split"],
     )
 
@@ -69,18 +78,40 @@ def main(argv: list[str] | None = None) -> None:
 
     eligible_a = int(cohort["eligible_a"].sum())
     eligible_b = int(cohort["eligible_b"].sum())
+    included_b = int(cohort["task_b_included"].sum())
     positive_a = int(cohort["label_deep_a"].fill_null(False).sum())
     positive_b = int(cohort["label_deep_b"].fill_null(False).sum())
+    embargoed = int(cohort["split"].is_null().sum()) if "split" in cohort.columns else 0
+    variant_meta = [
+        {
+            "name": variant.name,
+            "min_contributions": variant.min_contributions,
+            "min_active_weeks": variant.min_active_weeks,
+            "followup_days": variant.followup_days,
+            "kinds": list(variant.kinds),
+            "primary": variant.name == params.primary_variant.name,
+            "positive_a": int(
+                cohort[f"label_deep_a_{variant.name}"].fill_null(False).sum()
+            ),
+            "positive_b": int(
+                cohort[f"label_deep_b_{variant.name}"].fill_null(False).sum()
+            ),
+        }
+        for variant in params.all_variants()
+    ]
     meta = {
         "radpath_version": __version__,
         "generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "data_end_utc": data_end,
         "n_contributions": contributions.height,
         "n_users": cohort.height,
+        "n_embargoed": embargoed,
         "eligible_a": eligible_a,
         "eligible_b": eligible_b,
+        "task_b_included": included_b,
         "positive_a": positive_a,
         "positive_b": positive_b,
+        "primary_variant": params.primary_variant.name,
+        "label_variants": variant_meta,
         "params": {
             "first_n": params.first_n,
             "feature_days": params.feature_days,
@@ -88,9 +119,20 @@ def main(argv: list[str] | None = None) -> None:
             "followup_days": params.followup_days,
             "deep_min_contributions": params.deep_min_contributions,
             "deep_min_active_weeks": params.deep_min_active_weeks,
+            "near_coverage_start_days": params.near_coverage_start_days,
         },
         "target_subreddits": [str(value).lower() for value in cfg["target_subreddits"]],
         "gateway_subreddits": [str(value).lower() for value in cfg["gateway_subreddits"]],
+        "coverage": [
+            {
+                "subreddit": row["subreddit"],
+                "start_utc": row["start_utc"],
+                "end_utc": row["end_utc"],
+                "n_records": row["n_records"],
+                "overridden": row["overridden"],
+            }
+            for row in coverage.iter_rows(named=True)
+        ],
     }
     meta_path = out_path.with_name("cohort_meta.json")
     meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
@@ -98,8 +140,10 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Cohort: {cohort.height:,} users -> {out_path}")
     print(
         f"Task A eligible: {eligible_a:,} (deep: {positive_a:,}); "
-        f"Task B eligible: {eligible_b:,} (deep: {positive_b:,})"
+        f"Task B eligible: {eligible_b:,} (with gateway: {included_b:,}, "
+        f"deep: {positive_b:,})"
     )
+    print(f"Embargoed (null split): {embargoed:,}")
     print(f"Metadata: {meta_path}")
 
 

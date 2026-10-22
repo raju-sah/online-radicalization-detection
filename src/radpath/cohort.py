@@ -10,21 +10,53 @@ defines entry time ``t0``) but use different feature windows:
 
 In both tasks, a feature uses only records at or before the task cutoff and
 a label uses only target-community records with timestamps strictly after
-the cutoff and at or before ``cutoff + followup_days``. Users whose follow-up
-window extends past the end of observation are ineligible and receive null
-labels rather than a negative label.
+the cutoff. A label window is eligible only when it ends inside the observed
+coverage of every target subreddit that existed during that window; otherwise
+labels are null rather than negative.
+
+The primary label is one of several config-driven variants. Every variant is
+emitted as columns named after the variant (for example
+``label_deep_a_c20_w4_f90``). The primary variant also has short aliases
+(``label_deep_a``) for convenience.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping
 
 import polars as pl
 
+from radpath.coverage import (
+    apply_coverage_overrides,
+    coverage_from_contributions,
+    coverage_ranges,
+    normalise_coverage,
+    parse_utc,
+)
+
+LOGGER = logging.getLogger(__name__)
+
 SECONDS_PER_DAY = 86_400
 SECONDS_PER_WEEK = 604_800
+FOLLOWUP_TRUNCATED = "followup_truncated_by_coverage_end"
+
+
+@dataclass(frozen=True)
+class LabelVariant:
+    """One deep-engagement label definition."""
+
+    name: str
+    min_contributions: int
+    min_active_weeks: int
+    followup_days: int
+    kinds: tuple[str, ...] = ("submission", "comment")
+
+    @property
+    def comments_only(self) -> bool:
+        """Whether this variant counts comments only."""
+        return self.kinds == ("comment",)
 
 
 @dataclass(frozen=True)
@@ -37,19 +69,89 @@ class CohortParams:
     followup_days: int
     deep_min_contributions: int
     deep_min_active_weeks: int
+    near_coverage_start_days: int = 30
+    label_variants: tuple[LabelVariant, ...] = ()
 
     @classmethod
     def from_config(cls, cfg: Mapping[str, Any]) -> "CohortParams":
-        """Build parameters from a validated radpath config."""
+        """Build parameters and the full label-variant grid from config."""
         window = cfg["feature_window"]
+        min_contributions = int(cfg["deep_min_contributions"])
+        min_weeks = int(cfg["deep_min_active_weeks"])
+        followup_days = int(cfg["followup_days"])
+        primary = LabelVariant(
+            name=f"c{min_contributions}_w{min_weeks}_f{followup_days}",
+            min_contributions=min_contributions,
+            min_active_weeks=min_weeks,
+            followup_days=followup_days,
+        )
+        variants: list[LabelVariant] = [primary]
+        seen = {primary.name}
+
+        robustness = cfg.get("robustness", {}) or {}
+        for contributions in robustness.get("min_contributions", []):
+            for weeks in robustness.get("min_active_weeks", []):
+                for days in robustness.get("followup_days", []):
+                    variant = LabelVariant(
+                        name=f"c{int(contributions)}_w{int(weeks)}_f{int(days)}",
+                        min_contributions=int(contributions),
+                        min_active_weeks=int(weeks),
+                        followup_days=int(days),
+                    )
+                    if variant.name not in seen:
+                        variants.append(variant)
+                        seen.add(variant.name)
+
+        if bool(robustness.get("comments_only", False)):
+            variant = LabelVariant(
+                name=f"{primary.name}_comments",
+                min_contributions=primary.min_contributions,
+                min_active_weeks=primary.min_active_weeks,
+                followup_days=primary.followup_days,
+                kinds=("comment",),
+            )
+            if variant.name not in seen:
+                variants.append(variant)
+
         return cls(
             first_n=int(window["first_n"]),
             feature_days=int(window["days"]),
             pre_entry_days=int(cfg["pre_entry_days"]),
-            followup_days=int(cfg["followup_days"]),
-            deep_min_contributions=int(cfg["deep_min_contributions"]),
-            deep_min_active_weeks=int(cfg["deep_min_active_weeks"]),
+            followup_days=followup_days,
+            deep_min_contributions=min_contributions,
+            deep_min_active_weeks=min_weeks,
+            near_coverage_start_days=int(
+                (cfg.get("coverage", {}) or {}).get("near_start_days", 30)
+            ),
+            label_variants=tuple(variants),
         )
+
+    @property
+    def primary_variant(self) -> LabelVariant:
+        """The pre-specified primary label variant."""
+        return LabelVariant(
+            name=(
+                f"c{self.deep_min_contributions}_w{self.deep_min_active_weeks}"
+                f"_f{self.followup_days}"
+            ),
+            min_contributions=self.deep_min_contributions,
+            min_active_weeks=self.deep_min_active_weeks,
+            followup_days=self.followup_days,
+        )
+
+    def all_variants(self) -> tuple[LabelVariant, ...]:
+        """Return every configured variant, always including the primary."""
+        if not self.label_variants:
+            return (self.primary_variant,)
+        names = {variant.name for variant in self.label_variants}
+        if self.primary_variant.name not in names:
+            return (self.primary_variant, *self.label_variants)
+        return self.label_variants
+
+    @property
+    def max_followup_days(self) -> int:
+        """Longest label window across variants, used for split embargo."""
+        return max(variant.followup_days for variant in self.all_variants())
 
 
 def resolve_data_end(
@@ -57,6 +159,9 @@ def resolve_data_end(
     configured: Any = None,
 ) -> int:
     """Resolve the end of observation in epoch seconds.
+
+    This helper is retained for callers that need a single global timestamp.
+    Cohort eligibility uses per-subreddit coverage instead.
 
     Args:
         contributions: Cleaned contribution table.
@@ -72,18 +177,7 @@ def resolve_data_end(
             empty, or if an ISO date cannot be parsed.
     """
     if configured is not None and str(configured).strip():
-        value = str(configured).strip()
-        try:
-            return int(float(value))
-        except ValueError:
-            pass
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise ValueError(f"Invalid data_end_utc: {configured!r}") from exc
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return int(parsed.timestamp())
+        return parse_utc(configured)
     if contributions.height == 0:
         raise ValueError("Cannot infer data end from an empty contribution table.")
     return int(contributions["created_utc"].max())
@@ -94,25 +188,31 @@ def build_cohort(
     params: CohortParams,
     target_subreddits: Iterable[str],
     gateway_subreddits: Iterable[str],
-    data_end_utc: Any = None,
+    coverage: Any = None,
+    coverage_overrides: Mapping[str, Mapping[str, Any]] | None = None,
     split_fractions: Mapping[str, Any] | None = None,
+    data_end_utc: Any = None,
 ) -> pl.DataFrame:
     """Build one row per cohort user with cutoffs, features and labels.
 
     Args:
         contributions: Cleaned records with at least ``id``, ``author_hash``,
             ``subreddit``, ``kind``, ``created_utc``.
-        params: Window and label parameters.
+        params: Window and label-variant parameters.
         target_subreddits: Communities defining cohort entry.
         gateway_subreddits: Communities used for Task B pre-entry counts.
-        data_end_utc: Optional end of observation (see
-            :func:`resolve_data_end`).
-        split_fractions: When provided, add a ``split`` column using
-            :func:`radpath.split.temporal_split`.
+        coverage: Per-subreddit coverage frame or mapping. When omitted it is
+            inferred from the observed target records.
+        coverage_overrides: Manual start/end overrides applied to ``coverage``.
+        split_fractions: When provided, add a ``split`` column and embargo
+            windows that cross a split boundary.
+        data_end_utc: Deprecated global fallback. When supplied without an
+            explicit coverage argument, it is used as the end of every target
+            subreddit's coverage.
 
     Returns:
-        User-level DataFrame sorted by ``author_hash``. Label columns are
-        null for ineligible users.
+        User-level DataFrame sorted by ``author_hash``. Label columns are null
+        for ineligible users or for Task B users without gateway activity.
 
     Raises:
         ValueError: If required columns are missing or no target records
@@ -128,15 +228,36 @@ def build_cohort(
     if not targets:
         raise ValueError("At least one target subreddit is required.")
 
+    variants = params.all_variants()
+
     if contributions.height == 0:
-        return _empty_cohort(include_split=split_fractions is not None)
+        return _empty_cohort(params, include_split=split_fractions is not None)
 
     frame = contributions.with_columns(
         pl.col("subreddit").str.to_lowercase(),
         pl.col("created_utc").cast(pl.Int64),
     )
-    data_end = resolve_data_end(frame, data_end_utc)
-    followup_seconds = params.followup_days * SECONDS_PER_DAY
+
+    coverage_frame = (
+        coverage_from_contributions(frame, targets)
+        if coverage is None
+        else normalise_coverage(coverage)
+    )
+    coverage_frame = apply_coverage_overrides(coverage_frame, coverage_overrides)
+    coverage_frame = coverage_frame.filter(
+        pl.col("subreddit").is_in(list(targets))
+    )
+    if data_end_utc is not None and coverage is None:
+        # Deprecated compatibility path: a global observation end replaces
+        # per-target ends. New code should write/configure coverage instead.
+        legacy_end = parse_utc(data_end_utc)
+        coverage_frame = coverage_frame.with_columns(
+            pl.when(pl.col("subreddit").is_in(list(targets)))
+            .then(pl.lit(legacy_end))
+            .otherwise(pl.col("end_utc"))
+            .alias("end_utc")
+        )
+    ranges = coverage_ranges(coverage_frame)
 
     # Target records define t0. Deduplicate repeated IDs from overlapping dumps.
     core = (
@@ -145,7 +266,7 @@ def build_cohort(
         .unique(subset=["kind", "id"], keep="first", maintain_order=True)
     )
     if core.height == 0:
-        return _empty_cohort(include_split=split_fractions is not None)
+        return _empty_cohort(params, include_split=split_fractions is not None)
 
     entry = (
         core.group_by("author_hash", maintain_order=True)
@@ -170,13 +291,10 @@ def build_cohort(
             pl.col("_nth_ts").fill_null(pl.col("_a_cap")),
         ).alias("cutoff_a"),
         (pl.col("t0") - 1).alias("cutoff_b"),
-    ).with_columns(
-        (pl.col("cutoff_a") + followup_seconds).alias("followup_end_a"),
-        (pl.col("cutoff_b") + followup_seconds).alias("followup_end_b"),
-    ).with_columns(
-        (pl.col("followup_end_a") <= data_end).alias("eligible_a"),
-        (pl.col("followup_end_b") <= data_end).alias("eligible_b"),
     )
+
+    followups = sorted({variant.followup_days for variant in variants})
+    users = _add_followup_eligibility(users, ranges, followups)
 
     # Task A feature count: target records at or before cutoff_a.
     feature_a = (
@@ -209,51 +327,189 @@ def build_cohort(
         .alias("n_gateway_active_weeks_pre_b"),
     )
 
-    label_a = _window_labels(core, users, "cutoff_a", "followup_end_a", "a")
-    label_b = _window_labels(core, users, "cutoff_b", "followup_end_b", "b")
-
-    count_columns = [
-        "n_target_window_a",
-        "n_gateway_pre_b",
-        "n_gateway_subreddits_pre_b",
-        "n_gateway_active_weeks_pre_b",
-        "label_n_a",
-        "label_weeks_a",
-        "label_n_b",
-        "label_weeks_b",
-    ]
-    cohort = (
+    users = (
         users.join(feature_a, on="author_hash", how="left")
         .join(gateway_features, on="author_hash", how="left")
-        .join(label_a, on="author_hash", how="left")
-        .join(label_b, on="author_hash", how="left")
-        .with_columns([pl.col(name).fill_null(0) for name in count_columns])
         .with_columns(
-            pl.when(pl.col("eligible_a"))
-            .then(
-                (pl.col("label_n_a") >= params.deep_min_contributions)
-                & (pl.col("label_weeks_a") >= params.deep_min_active_weeks)
-            )
-            .otherwise(None)
-            .alias("label_deep_a"),
-            pl.when(pl.col("eligible_b"))
-            .then(
-                (pl.col("label_n_b") >= params.deep_min_contributions)
-                & (pl.col("label_weeks_b") >= params.deep_min_active_weeks)
-            )
-            .otherwise(None)
-            .alias("label_deep_b"),
+            pl.col("n_target_window_a").fill_null(0),
+            pl.col("n_gateway_pre_b").fill_null(0),
+            pl.col("n_gateway_subreddits_pre_b").fill_null(0),
+            pl.col("n_gateway_active_weeks_pre_b").fill_null(0),
         )
-        .drop("_a_cap", "_nth_ts")
-        .sort("author_hash")
     )
+
+    # Task B cohort restriction: at least one gateway contribution pre-entry.
+    for days in followups:
+        users = users.with_columns(
+            (
+                pl.col(f"eligible_b_f{days}")
+                & (pl.col("n_gateway_pre_b") >= 1)
+            ).alias(f"task_b_included_f{days}")
+        )
+
+    # Label counts depend only on follow-up length and record kinds, so each
+    # unique combination is aggregated once and reused across threshold variants.
+    combos = {
+        (variant.followup_days, variant.kinds)
+        for variant in variants
+    }
+    for task, cutoff_col in (("a", "cutoff_a"), ("b", "cutoff_b")):
+        for days, kinds in sorted(combos):
+            key = _combo_key(task, days, kinds)
+            labels = _window_labels(
+                core,
+                users,
+                cutoff_col,
+                f"followup_end_{task}_f{days}",
+                key,
+                kinds,
+            )
+            users = users.join(labels, on="author_hash", how="left")
+
+    users = users.with_columns(
+        [
+            pl.col(f"label_n_{_combo_key(task, days, kinds)}").fill_null(0)
+            .alias(f"label_n_{task}_{variant.name}")
+            for variant in variants
+            for task in ("a", "b")
+            for days, kinds in [(variant.followup_days, variant.kinds)]
+        ]
+        + [
+            pl.col(f"label_weeks_{_combo_key(task, days, kinds)}").fill_null(0)
+            .alias(f"label_weeks_{task}_{variant.name}")
+            for variant in variants
+            for task in ("a", "b")
+            for days, kinds in [(variant.followup_days, variant.kinds)]
+        ]
+    )
+
+    for variant in variants:
+        for task in ("a", "b"):
+            eligible_col = (
+                f"eligible_{task}_f{variant.followup_days}"
+                if task == "a"
+                else f"task_b_included_f{variant.followup_days}"
+            )
+            users = users.with_columns(
+                pl.when(pl.col(eligible_col))
+                .then(
+                    (
+                        pl.col(f"label_n_{task}_{variant.name}")
+                        >= variant.min_contributions
+                    )
+                    & (
+                        pl.col(f"label_weeks_{task}_{variant.name}")
+                        >= variant.min_active_weeks
+                    )
+                )
+                .otherwise(None)
+                .alias(f"label_deep_{task}_{variant.name}")
+            )
+
+    primary = params.primary_variant
+    aliases = [
+        pl.col(f"followup_end_a_f{params.followup_days}").alias("followup_end_a"),
+        pl.col(f"followup_end_b_f{params.followup_days}").alias("followup_end_b"),
+        pl.col(f"eligible_a_f{params.followup_days}").alias("eligible_a"),
+        pl.col(f"eligible_b_f{params.followup_days}").alias("eligible_b"),
+        pl.col(f"ineligible_reason_a_f{params.followup_days}").alias(
+            "ineligible_reason_a"
+        ),
+        pl.col(f"ineligible_reason_b_f{params.followup_days}").alias(
+            "ineligible_reason_b"
+        ),
+        pl.col(f"task_b_included_f{params.followup_days}").alias("task_b_included"),
+        pl.col(f"label_n_a_{primary.name}").alias("label_n_a"),
+        pl.col(f"label_weeks_a_{primary.name}").alias("label_weeks_a"),
+        pl.col(f"label_deep_a_{primary.name}").alias("label_deep_a"),
+        pl.col(f"label_n_b_{primary.name}").alias("label_n_b"),
+        pl.col(f"label_weeks_b_{primary.name}").alias("label_weeks_b"),
+        pl.col(f"label_deep_b_{primary.name}").alias("label_deep_b"),
+    ]
+    users = users.with_columns(aliases)
+
+    earliest_target_start = (
+        min((start for start, _ in ranges.values()), default=None)
+    )
+    if earliest_target_start is None:
+        users = users.with_columns(pl.lit(False).alias("near_coverage_start"))
+    else:
+        users = users.with_columns(
+            (
+                (pl.col("t0") >= earliest_target_start)
+                & (
+                    pl.col("t0")
+                    <= earliest_target_start
+                    + params.near_coverage_start_days * SECONDS_PER_DAY
+                )
+            ).alias("near_coverage_start")
+        )
+
+    users = users.with_columns(
+        (
+            pl.col("cutoff_a")
+            + params.max_followup_days * SECONDS_PER_DAY
+        ).alias("label_window_end")
+    ).drop("_a_cap", "_nth_ts")
+
+    # Drop temporary per-combination count columns now that variants are named.
+    temporary = [
+        f"label_n_{_combo_key(task, days, kinds)}"
+        for task in ("a", "b")
+        for days, kinds in combos
+    ] + [
+        f"label_weeks_{_combo_key(task, days, kinds)}"
+        for task in ("a", "b")
+        for days, kinds in combos
+    ]
+    users = users.drop(temporary).sort("author_hash")
 
     if split_fractions is not None:
         from radpath.split import temporal_split
 
-        cohort = temporal_split(cohort, split_fractions)
+        users = temporal_split(
+            users,
+            split_fractions,
+            label_end_col="label_window_end",
+        )
 
-    return cohort
+    return users
+
+
+def _combo_key(task: str, days: int, kinds: tuple[str, ...]) -> str:
+    """Column key for one cutoff/task/follow-up/kinds combination."""
+    kind_key = "comments" if kinds == ("comment",) else "all"
+    return f"{task}_f{int(days)}_{kind_key}"
+
+
+def _add_followup_eligibility(
+    users: pl.DataFrame,
+    ranges: Mapping[str, tuple[int, int]],
+    followups: Iterable[int],
+) -> pl.DataFrame:
+    """Add follow-up end dates and coverage eligibility per task and length."""
+    for task, cutoff_col in (("a", "cutoff_a"), ("b", "cutoff_b")):
+        for days in followups:
+            end_col = f"followup_end_{task}_f{days}"
+            truncated = pl.lit(False)
+            for start, end in ranges.values():
+                # Only targets that existed at entry can truncate the label
+                # window. A community that launches later cannot explain the
+                # user's absence from it before launch.
+                relevant = (pl.lit(start) <= pl.col("t0")) & (
+                    pl.lit(end) >= pl.col("t0")
+                )
+                truncated = truncated | (relevant & (pl.col(end_col) > pl.lit(end)))
+            users = users.with_columns(
+                (pl.col(cutoff_col) + days * SECONDS_PER_DAY).alias(end_col),
+            ).with_columns(
+                (~truncated).alias(f"eligible_{task}_f{days}"),
+                pl.when(truncated)
+                .then(pl.lit(FOLLOWUP_TRUNCATED))
+                .otherwise(None)
+                .alias(f"ineligible_reason_{task}_f{days}"),
+            )
+    return users
 
 
 def _window_labels(
@@ -261,15 +517,18 @@ def _window_labels(
     users: pl.DataFrame,
     cutoff_col: str,
     end_col: str,
-    suffix: str,
+    key: str,
+    kinds: tuple[str, ...],
 ) -> pl.DataFrame:
     """Aggregate post-window contribution counts and active weeks.
 
     Active weeks are 7-day bins anchored at the first second after the
-    cutoff, so a 90-day window contains at most 13 bins.
+    cutoff, so a 90-day window contains at most 13 bins. ``kinds`` restricts
+    the counted records (all records or comments only for the variant).
     """
+    filtered = core.filter(pl.col("kind").is_in(list(kinds)))
     return (
-        core.join(
+        filtered.join(
             users.select("author_hash", cutoff_col, end_col),
             on="author_hash",
             how="left",
@@ -280,18 +539,18 @@ def _window_labels(
         )
         .group_by("author_hash")
         .agg(
-            pl.len().alias(f"label_n_{suffix}"),
+            pl.len().alias(f"label_n_{key}"),
             (
                 (pl.col("created_utc") - pl.col(cutoff_col) - 1)
                 // SECONDS_PER_WEEK
             )
             .n_unique()
-            .alias(f"label_weeks_{suffix}"),
+            .alias(f"label_weeks_{key}"),
         )
     )
 
 
-def _empty_cohort(include_split: bool = False) -> pl.DataFrame:
+def _empty_cohort(params: CohortParams, include_split: bool = False) -> pl.DataFrame:
     """Return an empty cohort frame with the expected schema."""
     schema: dict[str, Any] = {
         "author_hash": pl.String,
@@ -299,22 +558,48 @@ def _empty_cohort(include_split: bool = False) -> pl.DataFrame:
         "n_target_records_total": pl.Int64,
         "entry_subreddit": pl.String,
         "cutoff_a": pl.Int64,
-        "followup_end_a": pl.Int64,
-        "eligible_a": pl.Boolean,
         "cutoff_b": pl.Int64,
-        "followup_end_b": pl.Int64,
-        "eligible_b": pl.Boolean,
         "n_target_window_a": pl.Int64,
         "n_gateway_pre_b": pl.Int64,
         "n_gateway_subreddits_pre_b": pl.Int64,
         "n_gateway_active_weeks_pre_b": pl.Int64,
-        "label_n_a": pl.Int64,
-        "label_weeks_a": pl.Int64,
-        "label_deep_a": pl.Boolean,
-        "label_n_b": pl.Int64,
-        "label_weeks_b": pl.Int64,
-        "label_deep_b": pl.Boolean,
+        "near_coverage_start": pl.Boolean,
+        "label_window_end": pl.Int64,
     }
+    followups = sorted({variant.followup_days for variant in params.all_variants()})
+    for task in ("a", "b"):
+        for days in followups:
+            schema[f"followup_end_{task}_f{days}"] = pl.Int64
+            schema[f"eligible_{task}_f{days}"] = pl.Boolean
+            schema[f"ineligible_reason_{task}_f{days}"] = pl.String
+            if task == "b":
+                schema[f"task_b_included_f{days}"] = pl.Boolean
+    schema.update(
+        {
+            "followup_end_a": pl.Int64,
+            "followup_end_b": pl.Int64,
+            "eligible_a": pl.Boolean,
+            "eligible_b": pl.Boolean,
+            "ineligible_reason_a": pl.String,
+            "ineligible_reason_b": pl.String,
+            "task_b_included": pl.Boolean,
+        }
+    )
+    for variant in params.all_variants():
+        for task in ("a", "b"):
+            schema[f"label_n_{task}_{variant.name}"] = pl.Int64
+            schema[f"label_weeks_{task}_{variant.name}"] = pl.Int64
+            schema[f"label_deep_{task}_{variant.name}"] = pl.Boolean
+    schema.update(
+        {
+            "label_n_a": pl.Int64,
+            "label_weeks_a": pl.Int64,
+            "label_deep_a": pl.Boolean,
+            "label_n_b": pl.Int64,
+            "label_weeks_b": pl.Int64,
+            "label_deep_b": pl.Boolean,
+        }
+    )
     if include_split:
         schema["split"] = pl.String
     return pl.DataFrame(schema=schema)

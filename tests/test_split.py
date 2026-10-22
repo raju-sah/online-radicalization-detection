@@ -56,17 +56,75 @@ def test_split_is_deterministic_and_not_row_random() -> None:
     )
 
 
-def test_split_handles_tied_entry_dates() -> None:
+def test_users_sharing_an_entry_date_share_a_split() -> None:
+    frame = pl.DataFrame(
+        {
+            "author_hash": [f"user_{index}" for index in range(30)],
+            "t0": [T0] * 10 + [T0 + 10 * DAY] * 10 + [T0 + 20 * DAY] * 10,
+        }
+    )
+    result = temporal_split(frame, {"train": 0.5, "val": 0.25, "test": 0.25})
+    assert result.height == 30
+    assert set(result["split"].unique().to_list()) == set(SPLIT_ORDER)
+    assert result["author_hash"].n_unique() == 30
+
+    date_split = (
+        result.with_columns(
+            pl.from_epoch(pl.col("t0"), time_unit="s").dt.date().alias("entry_date")
+        )
+        .group_by("entry_date")
+        .agg(pl.col("split").n_unique().alias("n_splits"))
+    )
+    assert date_split["n_splits"].to_list() == [1, 1, 1]
+
+
+def test_same_date_cohort_raises_instead_of_splitting_ties() -> None:
     frame = pl.DataFrame(
         {
             "author_hash": [f"user_{index}" for index in range(12)],
             "t0": [T0] * 12,
         }
     )
-    result = temporal_split(frame, {"train": 0.5, "val": 0.25, "test": 0.25})
-    assert result.height == 12
-    assert set(result["split"].unique().to_list()) == set(SPLIT_ORDER)
-    assert result["author_hash"].n_unique() == 12
+    with pytest.raises(ValueError, match="distinct entry dates"):
+        temporal_split(frame, {"train": 0.5, "val": 0.25, "test": 0.25})
+
+
+def test_embargo_drops_windows_crossing_split_boundaries() -> None:
+    frame = pl.DataFrame(
+        {
+            "author_hash": [f"user_{index:03d}" for index in range(120)],
+            "t0": [T0 + index * DAY for index in range(120)],
+            "label_window_end": [T0 + index * DAY + 5 * DAY for index in range(120)],
+        }
+    )
+    result = temporal_split(
+        frame,
+        {"train": 0.70, "val": 0.15, "test": 0.15},
+        label_end_col="label_window_end",
+    )
+    assigned = result.filter(pl.col("split").is_not_null())
+    assert set(assigned["split"].unique().to_list()) == set(SPLIT_ORDER)
+
+    val_start = int(
+        assigned.filter(pl.col("split") == "val")["t0"].min()
+    )
+    val_start_midnight = val_start - (val_start % DAY)
+    test_start = int(
+        assigned.filter(pl.col("split") == "test")["t0"].min()
+    )
+    test_start_midnight = test_start - (test_start % DAY)
+
+    train = result.filter(pl.col("split") == "train")
+    val = result.filter(pl.col("split") == "val")
+    assert train.height > 0 and val.height > 0
+    assert train["label_window_end"].max() < val_start_midnight
+    assert val["label_window_end"].max() < test_start_midnight
+    assert result["split"].is_null().sum() > 0
+    dropped = result.filter(pl.col("split").is_null())
+    assert dropped.height > 0
+    assert set(dropped["author_hash"]).isdisjoint(
+        set(assigned["author_hash"])
+    )
 
 
 def test_split_rejects_invalid_inputs() -> None:
