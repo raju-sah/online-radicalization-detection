@@ -260,7 +260,8 @@ split fractions; seed; and paths. The research decisions are also recorded in
 Defaults:
 
 ```yaml
-target_subreddits: [incels, Braincels, MGTOW, IncelsWithoutHate]
+target_subreddits: [incels, Braincels, IncelsWithoutHate]
+control_subreddits: [IncelTears, MGTOW]
 control_subreddits: [IncelTears]
 gateway_subreddits: [ForeverAlone, lonely, socialanxiety, dating_advice, short, Tinder]
 feature_window: {first_n: 5, days: 14}

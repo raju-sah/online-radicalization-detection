@@ -30,7 +30,7 @@ FIXTURE_START = 1_577_836_800  # 2020-01-01 UTC
 FIXTURE_DATA_END = 1_656_633_600  # 2022-07-01 UTC
 ENTRY_SPAN_DAYS = 500
 
-TARGETS = ["incels", "Braincels", "MGTOW", "IncelsWithoutHate"]
+TARGETS = ["incels", "Braincels", "IncelsWithoutHate"]
 CONTROLS = ["IncelTears", "ForeverAlone"]
 GATEWAYS = ["ForeverAlone", "lonely", "socialanxiety", "dating_advice", "short", "Tinder"]
 EXTRA = ["AskReddit"]

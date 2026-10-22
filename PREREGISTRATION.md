@@ -140,4 +140,10 @@ re-identification-risk review.
 
 ## Amendments
 
-None before model training.
+### Amendment 1 (2026-10-22, before any modelling)
+
+Research scope: `target_subreddits` = incels, Braincels, IncelsWithoutHate.
+MGTOW is moved to the comparison list. It is downloaded and used only in a
+later, separately reported contrast analysis; it never defines cohort entry
+(t0), features windows or labels in the primary analysis. No data had been
+modelled when this amendment was made.

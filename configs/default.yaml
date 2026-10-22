@@ -12,13 +12,13 @@ paths:
 target_subreddits:
   - incels
   - Braincels
-  - MGTOW
   - IncelsWithoutHate
 
 # Contrast communities: ingested and available for later comparison/EDA,
 # but they do NOT define cohort entry.
 control_subreddits:
   - IncelTears
+  - MGTOW  # comparison community only (amendment 2026-10-22); never defines entry or labels
 
 # "Gateway" communities used only for Task B pre-entry features.
 gateway_subreddits:
