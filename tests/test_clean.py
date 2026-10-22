@@ -8,6 +8,7 @@ from radpath.clean import (
     CleanRules,
     compose_text,
     drop_reason,
+    bot_rule,
     is_bot,
     is_deleted_author,
     is_deleted_value,
@@ -30,6 +31,17 @@ def test_bot_detection_is_case_insensitive_and_configurable() -> None:
 
     no_suffix = CleanRules(bot_name_suffixes=(), extra_bot_names=frozenset())
     assert not is_bot("HelperBot", no_suffix)
+
+
+def test_bot_rule_separates_explicit_names_from_suffix_heuristic() -> None:
+    rules = CleanRules(
+        bot_name_suffixes=("bot",),
+        extra_bot_names=frozenset({"automoderator"}),
+    )
+    assert bot_rule("AutoModerator", rules) == "explicit"
+    assert bot_rule("HelperBot", rules) == "suffix"
+    assert bot_rule("human_person", rules) is None
+    assert bot_rule(None, rules) is None
 
 
 def test_deleted_values_cover_markers_and_blanks() -> None:
@@ -77,11 +89,11 @@ def test_drop_reason(author: str, expected: str | None) -> None:
     assert reason == expected
 
 
-def test_drop_reason_empty_text() -> None:
-    assert drop_reason("real_user", "comment", None, None, "") == "empty_text"
+def test_drop_reason_keeps_known_authors_with_empty_or_removed_content() -> None:
+    assert drop_reason("real_user", "comment", None, None, "") is None
+    assert drop_reason("real_user", "comment", None, None, "[removed]") is None
+    assert drop_reason("real_user", "submission", "", "", "") is None
     assert drop_reason("real_user", "comment", None, None, "x") is None
-    no_empty_rule = CleanRules(drop_empty_text=False)
-    assert drop_reason("real_user", "comment", None, None, "", no_empty_rule) is None
 
 
 def test_rules_from_config() -> None:
@@ -90,11 +102,10 @@ def test_rules_from_config() -> None:
             "bot_name_suffixes": ["bot", "_robot"],
             "extra_bot_names": ["AutoModerator", "Helper"],
             "deleted_values": ["[deleted]"],
-            "drop_empty_text": False,
         }
     }
     rules = CleanRules.from_config(cfg)
     assert is_bot("Helper", rules)
     assert is_bot("name_robot", rules)
-    assert not rules.drop_empty_text
     assert is_deleted_value("[deleted]", rules)
+    assert not is_deleted_value("[removed]", rules)

@@ -110,26 +110,37 @@ def test_ingest_hashes_drops_and_normalises(tmp_path: Path) -> None:
         subreddit_filter={"incels"},
     )
     assert stats.total == 10
-    assert stats.kept == 2
+    assert stats.kept == 3
     assert stats.malformed_json == 1
     assert stats.dropped_deleted_author == 1
     assert stats.dropped_bot_author == 2
-    assert stats.dropped_empty_text == 1
+    assert stats.kept_empty_text == 1
+    assert stats.kept_removed_text == 0
+    assert stats.kept_deleted_text == 0
     assert stats.dropped_bad_timestamp == 1
     assert stats.dropped_subreddit == 1
     assert stats.dropped_missing_field == 1
+    assert stats.coverage["incels"] == (1_600_000_000, 1_600_000_100, 3)
 
     output = interim / "submissions" / "tiny_submissions.parquet"
     frame = pl.read_parquet(output)
-    assert frame.height == 2
+    assert frame.height == 3
     assert set(frame["author_hash"].to_list()) == {
         hash_author("Alice", SALT),
         hash_author("alice", SALT),
+        hash_author("empty_user", SALT),
     }
-    assert frame["created_utc"].to_list() == [1_600_000_000, 1_600_000_100]
-    assert frame["score"].to_list() == [11, 7]
+    assert sorted(frame["created_utc"].to_list()) == [
+        1_600_000_000,
+        1_600_000_000,
+        1_600_000_100,
+    ]
+    assert sorted(frame["score"].to_list()) == [7, 7, 11]
     assert frame["subreddit"].unique().to_list() == ["incels"]
     assert frame["kind"].unique().to_list() == ["submission"]
+    empty_row = frame.filter(pl.col("author_hash") == hash_author("empty_user", SALT))
+    assert empty_row["has_text"].to_list() == [False]
+    assert empty_row["text"].to_list() == [""]
 
     # Raw usernames must not survive anywhere in the output.
     for column in frame.columns:
@@ -176,10 +187,13 @@ def test_ingest_comments_and_load_contributions(tmp_path: Path) -> None:
         )
 
     frame = load_contributions(interim)
-    assert frame.height == 2
+    assert frame.height == 3
     assert set(frame["kind"].to_list()) == {"submission", "comment"}
     assert frame["subreddit"].unique().to_list() == ["incels"]
     assert frame["created_utc"].dtype == pl.Int64
+    removed = frame.filter(pl.col("id") == "c2").row(0, named=True)
+    assert removed["has_text"] is False
+    assert removed["text"] == ""
 
 
 def test_ingest_respects_overwrite_flag(tmp_path: Path) -> None:
@@ -190,6 +204,54 @@ def test_ingest_respects_overwrite_flag(tmp_path: Path) -> None:
     ingest_file(spec, out_dir, salt=SALT, overwrite=True)
     with pytest.raises(FileExistsError):
         ingest_file(spec, out_dir, salt=SALT, overwrite=False)
+
+
+def test_ingest_reports_distinct_bot_authors(tmp_path: Path) -> None:
+    raw_path = tmp_path / "bots.zst"
+    _write_zst(
+        raw_path,
+        [
+            _submission("s1", "helper_bot"),
+            _submission("s2", "AutoModerator"),
+            _submission("s3", "real_user"),
+        ],
+    )
+    stats = ingest_file(
+        FileSpec(path=raw_path, kind="submissions"),
+        tmp_path / "interim",
+        salt=SALT,
+    )
+    assert stats.bot_suffix_authors == {hash_author("helper_bot", SALT)}
+    assert stats.bot_explicit_authors == {hash_author("AutoModerator", SALT)}
+    assert stats.seen_authors == {
+        hash_author("helper_bot", SALT),
+        hash_author("AutoModerator", SALT),
+        hash_author("real_user", SALT),
+    }
+    assert stats.bot_suffix_share == pytest.approx(1 / 3)
+
+
+def test_write_coverage_includes_configured_subreddits(tmp_path: Path) -> None:
+    from radpath.coverage import write_coverage
+
+    raw_path = tmp_path / "one.zst"
+    _write_zst(raw_path, [_submission("s1", "alice", subreddit="incels")])
+    stats = ingest_file(
+        FileSpec(path=raw_path, kind="submissions"),
+        tmp_path / "interim" / "submissions",
+        salt=SALT,
+    )
+    path = write_coverage(
+        tmp_path / "interim" / "coverage.parquet",
+        stats.coverage,
+        subreddits={"incels", "Braincels"},
+    )
+    frame = pl.read_parquet(path)
+    rows = {row["subreddit"]: row for row in frame.iter_rows(named=True)}
+    assert rows["incels"]["start_utc"] == 1_600_000_000
+    assert rows["incels"]["n_records"] == 1
+    assert rows["braincels"]["start_utc"] is None
+    assert rows["braincels"]["n_records"] == 0
 
 
 def test_ingest_missing_file(tmp_path: Path) -> None:

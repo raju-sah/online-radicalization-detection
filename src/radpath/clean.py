@@ -3,6 +3,10 @@
 Cleaning happens *before* author hashing inside :mod:`radpath.ingest`, because
 bot detection needs the raw username. These helpers are pure and do not log
 or expose author names.
+
+Deleted/removed/empty *content* is not dropped: it still records a real
+account's activity. Only records whose author is unknown or automated, or
+whose required identifiers are missing, are excluded.
 """
 
 from __future__ import annotations
@@ -20,7 +24,6 @@ class CleanRules:
     deleted_values: frozenset[str] = frozenset({"[deleted]", "[removed]"})
     bot_name_suffixes: tuple[str, ...] = ("bot",)
     extra_bot_names: frozenset[str] = frozenset({"automoderator"})
-    drop_empty_text: bool = True
 
     @classmethod
     def from_config(cls, cfg: Mapping[str, Any]) -> "CleanRules":
@@ -44,7 +47,6 @@ class CleanRules:
             deleted_values=deleted,
             bot_name_suffixes=suffixes,
             extra_bot_names=extras,
-            drop_empty_text=bool(clean_cfg.get("drop_empty_text", True)),
         )
 
 
@@ -62,22 +64,33 @@ def is_deleted_author(author: Any, rules: CleanRules | None = None) -> bool:
     return is_deleted_value(author, rules)
 
 
-def is_bot(author: Any, rules: CleanRules | None = None) -> bool:
-    """Return True for configured bots and usernames ending in a bot suffix.
+def bot_rule(author: Any, rules: CleanRules | None = None) -> str | None:
+    """Return which bot rule matched an author, or None.
 
-    Matching is case-insensitive. This is deliberately conservative: it is
-    better to drop a borderline automated account than to model it as a
-    person, and the rule is documented as a limitation.
+    ``"explicit"`` means an exact configured name; ``"suffix"`` means the
+    configurable username-suffix heuristic. Matching is case-insensitive.
     """
     if author is None:
-        return False
+        return None
     active_rules = rules or CleanRules()
     name = str(author).strip().lower()
     if not name:
-        return False
+        return None
     if name in active_rules.extra_bot_names:
-        return True
-    return any(name.endswith(suffix) for suffix in active_rules.bot_name_suffixes if suffix)
+        return "explicit"
+    if any(name.endswith(suffix) for suffix in active_rules.bot_name_suffixes if suffix):
+        return "suffix"
+    return None
+
+
+def is_bot(author: Any, rules: CleanRules | None = None) -> bool:
+    """Return True for configured bots and usernames ending in a bot suffix.
+
+    This is deliberately conservative: it is better to drop a borderline
+    automated account than to model it as a person, and the rule is documented
+    as a limitation.
+    """
+    return bot_rule(author, rules) is not None
 
 
 def compose_text(
@@ -125,13 +138,13 @@ def drop_reason(
 ) -> str | None:
     """Return a cleaning reason for dropping a record, or None to keep it.
 
-    Possible reasons: ``deleted_author``, ``bot_author``, ``empty_text``.
+    Possible reasons: ``deleted_author`` and ``bot_author``. Content that is
+    deleted, removed or empty is kept with ``has_text = False`` because it is
+    still evidence of account activity.
     """
     active_rules = rules or CleanRules()
     if is_deleted_author(author, active_rules):
         return "deleted_author"
     if is_bot(author, active_rules):
         return "bot_author"
-    if active_rules.drop_empty_text and is_empty_text(kind, title, selftext, body, active_rules):
-        return "empty_text"
     return None

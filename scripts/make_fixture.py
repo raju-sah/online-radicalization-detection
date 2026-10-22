@@ -146,7 +146,12 @@ def _add_user_records(
 def _add_dirty_records(
     records: dict[tuple[str, str], list[dict[str, Any]]], rng: random.Random
 ) -> None:
-    """Add records that cleaning should remove."""
+    """Add records exercising cleaning rules.
+
+    Deleted authors, bots, bad timestamps and off-config subreddits are
+    dropped; records from known authors with removed or empty content are
+    retained with ``has_text = False``.
+    """
     base = _make_record(
         rng,
         record_id="dirty_1",

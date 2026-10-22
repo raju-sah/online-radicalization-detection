@@ -16,9 +16,9 @@ import hashlib
 import io
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Mapping
+from typing import Any, ClassVar, Iterable, Iterator, Mapping
 
 import orjson
 import polars as pl
@@ -26,7 +26,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import zstandard as zstd
 
-from radpath.clean import CleanRules, is_deleted_value, compose_text, drop_reason
+from radpath.clean import CleanRules, is_deleted_value, compose_text, drop_reason, bot_rule
 
 LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +41,7 @@ CONTRIBUTION_SCHEMA = pa.schema(
         pa.field("selftext", pa.string()),
         pa.field("body", pa.string()),
         pa.field("text", pa.string()),
+        pa.field("has_text", pa.bool_()),
         pa.field("score", pa.int64()),
         pa.field("num_comments", pa.int64()),
         pa.field("link_id", pa.string()),
@@ -68,7 +69,12 @@ class FileSpec:
 
 @dataclass
 class IngestStats:
-    """Aggregate ingestion counters. Never stores raw usernames."""
+    """Aggregate ingestion counters. Never stores raw usernames.
+
+    ``coverage`` stores aggregate first/last timestamps per subreddit.
+    ``seen_authors`` and the bot sets store salted hashes only, so distinct
+    author counts can be reported without retaining or logging usernames.
+    """
 
     files: int = 0
     total: int = 0
@@ -78,28 +84,76 @@ class IngestStats:
     dropped_bad_timestamp: int = 0
     dropped_deleted_author: int = 0
     dropped_bot_author: int = 0
-    dropped_empty_text: int = 0
+    kept_removed_text: int = 0
+    kept_deleted_text: int = 0
+    kept_empty_text: int = 0
     dropped_subreddit: int = 0
+    coverage: dict[str, tuple[int, int, int]] = field(default_factory=dict)
+    seen_authors: set[str] = field(default_factory=set)
+    bot_suffix_authors: set[str] = field(default_factory=set)
+    bot_explicit_authors: set[str] = field(default_factory=set)
+
+    _COUNTERS: ClassVar[tuple[str, ...]] = (
+        "files",
+        "total",
+        "kept",
+        "malformed_json",
+        "dropped_missing_field",
+        "dropped_bad_timestamp",
+        "dropped_deleted_author",
+        "dropped_bot_author",
+        "kept_removed_text",
+        "kept_deleted_text",
+        "kept_empty_text",
+        "dropped_subreddit",
+    )
 
     def add(self, other: "IngestStats") -> None:
-        """Add another stats object's counters into this one."""
-        for name in self.__dataclass_fields__:
+        """Add another stats object's counters, coverage and author sets."""
+        for name in self._COUNTERS:
             setattr(self, name, getattr(self, name) + getattr(other, name))
+        for subreddit, (start, end, count) in other.coverage.items():
+            if subreddit in self.coverage:
+                old_start, old_end, old_count = self.coverage[subreddit]
+                self.coverage[subreddit] = (
+                    min(old_start, start),
+                    max(old_end, end),
+                    old_count + count,
+                )
+            else:
+                self.coverage[subreddit] = (start, end, count)
+        self.seen_authors.update(other.seen_authors)
+        self.bot_suffix_authors.update(other.bot_suffix_authors)
+        self.bot_explicit_authors.update(other.bot_explicit_authors)
 
     def as_dict(self) -> dict[str, int]:
         """Return counters as a plain dictionary."""
-        return {name: int(getattr(self, name)) for name in self.__dataclass_fields__}
+        return {name: int(getattr(self, name)) for name in self._COUNTERS}
+
+    @property
+    def bot_suffix_share(self) -> float | None:
+        """Share of distinct non-deleted authors dropped by the suffix rule."""
+        if not self.seen_authors:
+            return None
+        return len(self.bot_suffix_authors) / len(self.seen_authors)
 
     def summary(self) -> str:
         """Compact human-readable summary (aggregate only)."""
+        share = self.bot_suffix_share
+        share_text = f"{share:.2%}" if share is not None else "n/a"
         return (
             f"files={self.files} read={self.total} kept={self.kept} "
             f"malformed={self.malformed_json} missing={self.dropped_missing_field} "
             f"bad_ts={self.dropped_bad_timestamp} "
             f"deleted_author={self.dropped_deleted_author} "
             f"bot_author={self.dropped_bot_author} "
-            f"empty_text={self.dropped_empty_text} "
-            f"other_subreddit={self.dropped_subreddit}"
+            f"removed_text={self.kept_removed_text} "
+            f"deleted_text={self.kept_deleted_text} "
+            f"empty_text={self.kept_empty_text} "
+            f"other_subreddit={self.dropped_subreddit} "
+            f"distinct_authors={len(self.seen_authors)} "
+            f"bot_suffix_authors={len(self.bot_suffix_authors)} ({share_text}) "
+            f"bot_explicit_authors={len(self.bot_explicit_authors)}"
         )
 
 
@@ -173,8 +227,9 @@ def prepare_record(
 
     Returns:
         ``(row, None)`` when kept, otherwise ``(None, reason)`` where reason
-        is one of ``missing_field``, ``bad_timestamp``, ``deleted_author``,
-        ``bot_author`` or ``empty_text``.
+        is one of ``missing_field``, ``bad_timestamp``, ``deleted_author`` or
+        ``bot_author``. Known authors with removed/deleted/empty content are
+        kept with ``has_text = False``.
     """
     active_rules = rules or CleanRules()
     record_id = record.get("id")
@@ -208,6 +263,7 @@ def prepare_record(
         "selftext": selftext,
         "body": body,
         "text": text,
+        "has_text": bool(text.strip()),
         "score": _as_int(record.get("score")),
         "num_comments": _as_int(record.get("num_comments")),
         "link_id": _as_text(record.get("link_id")) or None,
@@ -236,6 +292,20 @@ def iter_jsonl(path: Path) -> Iterator[dict[str, Any] | None]:
                     yield None
 
 
+def _kept_text_case(record: Mapping[str, Any]) -> str:
+    """Classify a kept record with no usable text for aggregate logging."""
+    values = {
+        str(record.get(name)).strip().lower()
+        for name in ("title", "selftext", "body")
+        if record.get(name) is not None
+    }
+    if "[removed]" in values:
+        return "removed"
+    if "[deleted]" in values:
+        return "deleted"
+    return "empty"
+
+
 def ingest_file(
     spec: FileSpec,
     out_dir: Path,
@@ -257,7 +327,7 @@ def ingest_file(
         overwrite: Replace an existing output file.
 
     Returns:
-        Aggregate counters for the file.
+        Aggregate counters and observed coverage for the file.
 
     Raises:
         FileNotFoundError: If the input file is missing.
@@ -297,6 +367,11 @@ def ingest_file(
             ):
                 stats.dropped_subreddit += 1
                 continue
+            raw_author = record.get("author")
+            author_hash: str | None = None
+            if not is_deleted_value(raw_author, active_rules):
+                author_hash = hash_author(str(raw_author), salt)
+                stats.seen_authors.add(author_hash)
             row, reason = prepare_record(record, spec.kind, salt, active_rules)
             if row is None:
                 counter = {
@@ -304,11 +379,29 @@ def ingest_file(
                     "bad_timestamp": "dropped_bad_timestamp",
                     "deleted_author": "dropped_deleted_author",
                     "bot_author": "dropped_bot_author",
-                    "empty_text": "dropped_empty_text",
                 }.get(reason or "", "dropped_missing_field")
                 setattr(stats, counter, getattr(stats, counter) + 1)
+                if reason == "bot_author" and author_hash is not None:
+                    if bot_rule(raw_author, active_rules) == "explicit":
+                        stats.bot_explicit_authors.add(author_hash)
+                    else:
+                        stats.bot_suffix_authors.add(author_hash)
                 continue
             stats.kept += 1
+            if not row["has_text"]:
+                case = _kept_text_case(record)
+                setattr(stats, f"kept_{case}_text", getattr(stats, f"kept_{case}_text") + 1)
+            subreddit_name = str(row["subreddit"])
+            timestamp = int(row["created_utc"])
+            if subreddit_name in stats.coverage:
+                start, end, count = stats.coverage[subreddit_name]
+                stats.coverage[subreddit_name] = (
+                    min(start, timestamp),
+                    max(end, timestamp),
+                    count + 1,
+                )
+            else:
+                stats.coverage[subreddit_name] = (timestamp, timestamp, 1)
             batch.append(row)
             if len(batch) >= batch_size:
                 flush()
@@ -330,6 +423,7 @@ def ingest_files(
     batch_size: int = 20_000,
     subreddit_filter: set[str] | None = None,
     overwrite: bool = True,
+    bot_warn_fraction: float = 0.01,
 ) -> IngestStats:
     """Ingest several raw files into ``interim_dir/<kind>/``.
 
@@ -341,9 +435,11 @@ def ingest_files(
         batch_size: Rows per Parquet write.
         subreddit_filter: Lower-case subreddits to keep.
         overwrite: Replace existing outputs.
+        bot_warn_fraction: Warn when the suffix rule drops more than this
+            share of distinct non-deleted authors.
 
     Returns:
-        Combined counters across files.
+        Combined counters and coverage across files.
     """
     combined = IngestStats()
     for spec in specs:
@@ -357,6 +453,20 @@ def ingest_files(
             overwrite=overwrite,
         )
         combined.add(file_stats)
+    LOGGER.info(
+        "distinct authors: seen=%d bot_suffix=%d bot_explicit=%d",
+        len(combined.seen_authors),
+        len(combined.bot_suffix_authors),
+        len(combined.bot_explicit_authors),
+    )
+    share = combined.bot_suffix_share
+    if share is not None and share > bot_warn_fraction:
+        LOGGER.warning(
+            "bot suffix rule dropped %.2f%% of distinct authors "
+            "(threshold %.2f%%); review the suffix rule",
+            share * 100,
+            bot_warn_fraction * 100,
+        )
     return combined
 
 
@@ -366,7 +476,15 @@ def _empty_contributions() -> pl.DataFrame:
     return pl.DataFrame(
         {
             name: pl.Series(
-                name, [], dtype=pl.Int64 if name in integer_columns else pl.String
+                name,
+                [],
+                dtype=(
+                    pl.Int64
+                    if name in integer_columns
+                    else pl.Boolean
+                    if name == "has_text"
+                    else pl.String
+                ),
             )
             for name in CONTRIBUTION_COLUMNS
         }
@@ -393,9 +511,14 @@ def load_contributions(interim_dir: Path) -> pl.DataFrame:
         [pl.read_parquet(path) for path in paths],
         how="vertical_relaxed",
     )
+    if "has_text" not in frame.columns:
+        frame = frame.with_columns(
+            (pl.col("text").str.strip_chars().str.len_chars() > 0).alias("has_text")
+        )
     return frame.with_columns(
         pl.col("subreddit").str.to_lowercase(),
         pl.col("created_utc").cast(pl.Int64),
         pl.col("score").cast(pl.Int64),
         pl.col("num_comments").cast(pl.Int64),
+        pl.col("has_text").cast(pl.Boolean),
     ).sort(["author_hash", "created_utc", "id"])

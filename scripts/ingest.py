@@ -28,6 +28,7 @@ from radpath.config import (  # noqa: E402
     get_salt,
     load_config,
 )
+from radpath.coverage import write_coverage  # noqa: E402
 from radpath.ingest import FileSpec, ingest_files  # noqa: E402
 
 
@@ -110,6 +111,9 @@ def main(argv: list[str] | None = None) -> None:
         None if args.no_subreddit_filter or not restrict else configured_subreddits(cfg)
     )
     batch_size = args.batch_size or int(cfg.get("ingest", {}).get("batch_size", 20_000))
+    bot_warn_fraction = float(
+        cfg.get("clean", {}).get("bot_author_warn_fraction", 0.01)
+    )
 
     specs = [
         *(FileSpec(path=path, kind="submissions") for path in submissions),
@@ -123,9 +127,16 @@ def main(argv: list[str] | None = None) -> None:
         batch_size=batch_size,
         subreddit_filter=subreddit_filter,
         overwrite=args.overwrite,
+        bot_warn_fraction=bot_warn_fraction,
+    )
+    coverage_path = write_coverage(
+        paths["interim"] / "coverage.parquet",
+        stats.coverage,
+        subreddits=configured_subreddits(cfg),
     )
     print(f"Ingested {stats.files} file(s): {stats.summary()}")
     print(f"Interim Parquet: {paths['interim']}")
+    print(f"Coverage: {coverage_path}")
 
 
 if __name__ == "__main__":
