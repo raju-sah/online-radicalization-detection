@@ -18,6 +18,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from radpath.config import ensure_data_dirs, load_config  # noqa: E402
+from radpath.coverage import apply_coverage_overrides, load_coverage  # noqa: E402
 from radpath.eda import run_eda  # noqa: E402
 
 
@@ -44,21 +45,29 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(f"Cohort not found: {cohort_path}. Run scripts/build_cohort.py first.")
 
     cohort = pl.read_parquet(cohort_path)
+    coverage = apply_coverage_overrides(
+        load_coverage(paths["interim"]),
+        cfg.get("coverage_overrides"),
+    )
     meta_path = cohort_path.with_name("cohort_meta.json")
-    data_end = None
+    primary_variant = None
     if meta_path.exists():
         import json
 
-        data_end = json.loads(meta_path.read_text(encoding="utf-8")).get("data_end_utc")
+        primary_variant = json.loads(
+            meta_path.read_text(encoding="utf-8")
+        ).get("primary_variant")
 
-    result = run_eda(cohort, cfg, paths["reports"], data_end_utc=data_end)
+    result = run_eda(cohort, cfg, paths["reports"], coverage=coverage)
     print(f"EDA written to {paths['reports']} for {result['n_users']:,} users")
     for row in result["class_balance"]:
+        if primary_variant and row["variant"] != primary_variant:
+            continue
         rate = row["positive_rate"]
         rate_text = f"{rate:.1%}" if rate is not None else "n/a"
         print(
-            f"  Task {row['task'].upper()}: {row['eligible_users']:,} eligible, "
-            f"{row['positive']:,} deep ({rate_text})"
+            f"  Task {row['task'].upper()} [{row['variant']}]: "
+            f"{row['eligible_users']:,} eligible, {row['positive']:,} deep ({rate_text})"
         )
 
 

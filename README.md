@@ -46,8 +46,9 @@ cutoff_B = t0 - 1 second
 feature records: t0 - 180 days <= created_utc <= cutoff_B
 ```
 
-Users with no gateway activity receive zero counts and remain in the cohort
-(they are not treated as missing).
+The Task B cohort includes only users with at least one gateway contribution in
+that window. Users with zero gateway activity are reported as excluded, not
+treated as missing.
 
 ### Label (both tasks)
 
@@ -57,21 +58,27 @@ deep = (target contributions in window >= 20)
        AND (distinct active weeks in window >= 4)
 ```
 
-Labels use **target-community records only**, strictly after the cutoff.
-Active weeks are seven-day bins anchored at the first second after the
-cutoff, so a 90-day window has at most 13 bins. Users whose label window ends
-after the end of observation are **ineligible and receive a null label**, not
-a negative one.
+Submissions and comments have equal weight. Labels use **target-community
+records only**, strictly after the cutoff. Active weeks are seven-day bins
+anchored at the first second after the cutoff, so a 90-day window has at most
+13 bins.
 
-The cohort table exposes both the label components (`label_n_a`,
-`label_weeks_a`, ...) and the final `label_deep_a` / `label_deep_b` columns.
-Filter to `eligible_a`/`eligible_b` before any modelling.
+Label eligibility is per-subreddit: a window must end inside the observed
+coverage of every target subreddit that existed at entry. Users whose window is
+truncated by a subreddit ending (for example a ban) receive a null label and an
+`ineligible_reason`, not a negative label.
+
+The cohort table exposes every config-driven variant, named like
+`label_deep_a_c20_w4_f90`, plus the primary aliases `label_deep_a` /
+`label_deep_b`. Use `eligible_a` and `task_b_included` before modelling.
 
 ### Temporal split
 
-Users are ordered by entry date (`t0`), with hashed IDs as a deterministic
-tie-breaker, and assigned 70% train (earliest), 15% validation, 15% test
-(latest). The split is user-level and is never random at the row level.
+Users are split by UTC calendar date of entry (`t0`) into 70% train (earliest),
+15% validation, 15% test (latest). All users sharing an entry date share a
+split. A label embargo removes training users whose label window reaches the
+validation start date, and validation users whose window reaches the test
+start date. Embargoed users keep their cohort row with `split = null`.
 
 ## Setup
 
@@ -182,7 +189,8 @@ python scripts/ingest.py \
 ```
 
 Outputs go to `data/interim/submissions/` and `data/interim/comments/`,
-with usernames replaced by salted hashes. If files are nested, use
+with usernames replaced by salted hashes. Per-subreddit first/last coverage is
+written to `data/interim/coverage.parquet`. If files are nested, use
 `"data/raw/**/*_submissions.zst"` (quote globs so Python expands them) or
 pass directories with `--submissions data/raw/incels_dumps`.
 
@@ -209,7 +217,9 @@ Writes `data/processed/cohort.parquet` and an aggregate
 python scripts/run_eda.py --config configs/default.yaml
 ```
 
-Writes plots, class-balance tables, and `summary.md` to `reports/`.
+Writes plots, class-balance tables (including every label variant and split),
+coverage and monthly-entrant summaries, ineligibility counts, a sensitivity
+analysis, and `summary.md` to `reports/`.
 
 4. **Run tests**:
 
@@ -237,50 +247,60 @@ pipeline testing only and must never be analysed as data.
 All research parameters live in `configs/default.yaml`: target, control, and
 gateway subreddit lists; `feature_window.first_n`, `feature_window.days`;
 `pre_entry_days`; `followup_days`; `deep_min_contributions`;
-`deep_min_active_weeks`; split fractions; seed; and paths.
+`deep_min_active_weeks`; the robustness grid; `coverage_overrides`;
+split fractions; seed; and paths. The research decisions are also recorded in
+`PREREGISTRATION.md`, dated before model training.
 
 Defaults:
 
 ```yaml
 target_subreddits: [incels, Braincels, MGTOW, IncelsWithoutHate]
-control_subreddits: [IncelTears, ForeverAlone]
+control_subreddits: [IncelTears]
 gateway_subreddits: [ForeverAlone, lonely, socialanxiety, dating_advice, short, Tinder]
 feature_window: {first_n: 5, days: 14}
 pre_entry_days: 180
 followup_days: 90
 deep_min_contributions: 20
 deep_min_active_weeks: 4
+robustness:
+  min_contributions: [10, 20, 50]
+  min_active_weeks: [3, 4, 8]
+  followup_days: [90, 180]
+  comments_only: true
+coverage_overrides: {}
 seed: 42
 ```
 
-`data_end_utc` defaults to `null`, meaning the latest timestamp in the
-ingested data. For real data, set it explicitly to the end of coverage of the
-**target** dumps. Otherwise a gateway dump that extends later than the target
-dumps can make follow-up windows look complete when target coverage has
-already ended.
+Per-subreddit coverage is inferred during ingestion. If a subreddit's data end
+is not the dump end, for example because of a known ban, add a
+`coverage_overrides` entry with `start_utc` and/or `end_utc`. Users entering
+within `coverage.near_start_days` of the earliest target coverage are flagged
+`near_coverage_start` and excluded by the pre-specified sensitivity analysis.
 
 ## Repository layout
 
 ```
 AGENTS.md                 project ethics/rigour rules for future sessions
 README.md
+PREREGISTRATION.md        dated analysis decisions, written before modelling
 requirements.txt
 pytest.ini
 .env.example
 .gitignore
 configs/default.yaml
 data/raw/                 raw .zst dumps (gitignored)
-data/interim/             hashed cleaned parquet (gitignored)
+data/interim/             hashed cleaned parquet + coverage (gitignored)
 data/processed/           cohort parquet/metadata (gitignored)
 reports/                  aggregate EDA outputs (gitignored except .gitkeep)
 src/radpath/
   __init__.py
   config.py               YAML + .env loading, validation, paths, salt
-  clean.py                deleted/bot/empty-text rules
+  clean.py                deleted/bot rules; empty content is retained
+  coverage.py             per-subreddit coverage, overrides, artifact I/O
   ingest.py               streaming .zst JSONL -> parquet, salted hashing
   download.py             torrent/API acquisition, checkpoints, manifest
-  cohort.py               t0, windows, eligibility, labels, split hook
-  split.py                user-level temporal train/val/test
+  cohort.py               t0, windows, eligibility, label variants, split hook
+  split.py                date-threshold temporal split + label embargo
   eda.py                  aggregate summaries and plots
 scripts/
   make_fixture.py         synthetic .zst generator
@@ -291,6 +311,7 @@ scripts/
 tests/
   test_ingest.py
   test_clean.py
+  test_coverage.py
   test_cohort.py
   test_download.py
   test_no_leakage.py
@@ -322,24 +343,27 @@ These rules are non-negotiable and are duplicated in `AGENTS.md`.
 - **No leakage is enforced by code and tested.** Features use only records
   at or before the task cutoff; labels use only target records strictly after
   it. `tests/test_no_leakage.py` independently reconstructs both sets.
-- **Eligibility depends on dump coverage, not account activity.** A user who
-  leaves Reddit is observed as a non-deep user if their 90-day window falls
-  inside the dumps. "Deep engagement" therefore means observed sustained
-  activity, not necessarily intent or persistence beyond the data.
+- **Eligibility depends on per-subreddit dump coverage, not account activity.**
+  A user who leaves Reddit is observed as a non-deep user if their label window
+  falls inside the target coverage. "Deep engagement" therefore means observed
+  sustained activity, not necessarily intent or persistence beyond the data.
+  Windows truncated by a target subreddit ending are null, not negative.
 - **Left truncation.** Users already active in target communities before the
   first dump record are treated as new entrants at their first observed
-  record. For real data, consider excluding users whose first observed
-  target activity falls within a buffer after the start of data coverage.
+  record. `near_coverage_start` flags the first 30 days; the pre-specified
+  sensitivity analysis excludes those users.
 - **Bot filtering is a heuristic.** Names ending in a configurable suffix
   (`bot`) plus an explicit list are dropped, as are `[deleted]`/`[removed]`
-  authors and records with no usable text. Real automated accounts that do
-  not match the rule remain.
+  authors. Records from known authors with removed, deleted or empty content
+  are retained for activity counts and labels with `has_text = false`; they
+  are excluded from any future text features. Real automated accounts that do
+  not match the bot rule remain.
 - **Username case is folded before hashing** because Reddit usernames are
   case-insensitive. If a source dump inconsistently changes casing, this
   keeps one account as one user.
-- **Zero gateway activity is informative, not missing.** Task B includes
-  users with no gateway records; a separate "gateway users only" sensitivity
-  analysis may be useful.
+- **Zero gateway activity is informative, not missing.** Task B excludes users
+  with no gateway contribution in the pre-entry window and reports that
+  exclusion separately.
 - **Label thresholds and windows are research choices**, not ground truth.
   They are configurable and should be sensitivity-tested before the paper.
 - **No models yet.** Future modelling must report AUROC, AUPRC, F1, and
