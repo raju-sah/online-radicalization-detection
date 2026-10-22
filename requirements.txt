@@ -1,5 +1,6 @@
 polars>=1.0,<2
 pyarrow>=16
+bencodepy>=0.9
 zstandard>=0.22
 orjson>=3.9
 PyYAML>=6.0
