@@ -110,7 +110,6 @@ python scripts/download_data.py --dry-run
 
 # Show aggregate record counts for planning
 python scripts/download_data.py --estimate --only incels Braincels
-
 # Download selected targets (disk guard requires 5 GiB free afterwards)
 python scripts/download_data.py --yes --only incels Braincels
 
@@ -131,7 +130,8 @@ page returns HTTP 404), the script retries with the configured magnet URI and
 then falls back to the Arctic Shift API route. Magnet metadata fetching uses
 `aria2c --bt-metadata-only` and gives up after 10 minutes. API sizes are
 unknown until downloaded, so use `--estimate` and review the disk guard before
-passing `--yes` with many targets.
+passing `--yes` with many targets. Time-series counts can start in 2018, so
+they are planning lower bounds for older subreddits; validate with a pilot.
 
 Outputs are written to `data/raw/<subreddit>_<type>.zst`. API downloads are
 resumable through `data/raw/_checkpoints/`; a completed manifest with route,
