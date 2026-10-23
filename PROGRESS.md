@@ -121,3 +121,9 @@ synthetic fixtures only; it must not read real data or write to
 - First run (PID 3071601) exited with HTTP 422 errors on 17 of 22 files (log: `reports/download_run1.log`); incels/submissions, incelswithouthate/submissions complete.
 - Resumed from checkpoints with the patched 422 handler: PID 3273123 (`--workers 3`), disk guard restarted. ~25-30 rec/s per stream.
 - Phase 2 smoke test runs when incels comments+submissions are both complete.
+
+## STOP: Arctic Shift unavailable (2026-10-23 ~10:05 local)
+
+- Run 2 (PID 3273123, ~7 h) added ~1.1M incels/braincels/mgtow comments, then every stream failed with HTTP 422 at ~09:56 (also on first requests with no cursor), and a relaunch at 10:03 got HTTP 500 on all streams ("blocked repeatedly ... stopping downloads").
+- State: incels submissions, incelswithouthate submissions, braincels submissions complete. incels comments 912,843 (to 2017-09-14), braincels comments ~0.7M+, mgtow comments ~0.38M+; other streams partial or empty. All checkpoints intact; resume with the same command.
+- Per AGENTS.md rule 4 (stop and report if repeatedly blocked; do not evade limits) the download is stopped and nothing is retried. Phase 2/4 blocked. Waiting for the user to decide (wait for API recovery vs. torrent route needing aria2 via pkexec).
