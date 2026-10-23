@@ -138,3 +138,8 @@ synthetic fixtures only; it must not read real data or write to
 - incels comments (1,131,720) and submissions (54,215) complete. Check done while the download (PID 3685317) kept running; the download was not touched.
 - Smoke run in `/tmp/radpath-smoke` (config `smoke.yaml`, targets=[incels] only): ingest read 1,185,935 records, kept 906,607 (deleted authors 268,821, bot authors 10,507; 0 malformed, 0 bad timestamps), 39,120 distinct hashed authors; cohort 38,991 users; EDA wrote without error. 45 s total.
 - No parse/schema fixes were needed. Results deliberately not interpreted.
+
+## API outage #2 (2026-10-23 19:08 local)
+
+- Run 3 (PID 3685317, 6.3 h) added incels comments to completion, braincels comments to 2018-09-04 (1.68M), mgtow comments to 2017-11-12 (1.15M), incelswithouthate comments to 2020-08-15 (0.75M). At 19:08 all streams failed simultaneously with HTTP 422, same signature as outage #1 (which cleared after ~2.5 h). Complete: 4 of 22 streams.
+- Policy: one resume attempt about every 90 min; stop and report if it keeps failing. No evasion.
