@@ -143,3 +143,7 @@ synthetic fixtures only; it must not read real data or write to
 
 - Run 3 (PID 3685317, 6.3 h) added incels comments to completion, braincels comments to 2018-09-04 (1.68M), mgtow comments to 2017-11-12 (1.15M), incelswithouthate comments to 2020-08-15 (0.75M). At 19:08 all streams failed simultaneously with HTTP 422, same signature as outage #1 (which cleared after ~2.5 h). Complete: 4 of 22 streams.
 - Policy: one resume attempt about every 90 min; stop and report if it keeps failing. No evasion.
+
+## Recovery #2 (2026-10-23 20:41 local)
+
+- API recovered after ~1.5 h; resumed with the same command, PID 4044957, disk guard reattached.
