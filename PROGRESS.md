@@ -11,7 +11,7 @@ are in `PREREGISTRATION.md`.
 | Phase | Status | Notes |
 |---|---|---|
 | 1. Download speed-up + commit | done | Shared 1 req/s limiter, `--workers 3`, priority ordering, duplicate-page advance; download running. |
-| 2. r/incels smoke test | pending | Not run: `incels_comments` and `incels_submissions` are not complete. `/tmp/radpath-smoke` is empty. Phase 3 proceeds first, as allowed by the roadmap. |
+| 2. r/incels smoke test | done | Ran 2026-10-23 on complete incels comments+submissions; no schema/parse issues. Tag `phase-2`. |
 | 3. Synthetic features + baselines | done | `features.py`, `models.py`, `scripts/run_models.py`; verified on a 4,000-user synthetic fixture. Tag `phase-3`. |
 | 4. Full real-data run | blocked | Waiting for all target and control downloads. |
 | 5. Real-data baselines | pending | Depends on Phase 4 and Gate 1. |
@@ -132,3 +132,9 @@ synthetic fixtures only; it must not read real data or write to
 
 - Torrent route tried (dry run): magnet metadata found no peers in 600 s, so the script fell back to the API. Torrent not viable now.
 - API recovered; resumed with the same command, PID 3685315, disk guard restarted. incels comments back at work (checkpoint ~912k to 2017-09-14).
+
+## Phase 2 record (done, 2026-10-23 ~14:50 local)
+
+- incels comments (1,131,720) and submissions (54,215) complete. Check done while the download (PID 3685317) kept running; the download was not touched.
+- Smoke run in `/tmp/radpath-smoke` (config `smoke.yaml`, targets=[incels] only): ingest read 1,185,935 records, kept 906,607 (deleted authors 268,821, bot authors 10,507; 0 malformed, 0 bad timestamps), 39,120 distinct hashed authors; cohort 38,991 users; EDA wrote without error. 45 s total.
+- No parse/schema fixes were needed. Results deliberately not interpreted.
