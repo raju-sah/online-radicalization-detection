@@ -18,7 +18,7 @@ are in `PREREGISTRATION.md`.
 | 6. Sentence embeddings | done | MiniLM on CPU in ~40 min. Tag `phase-6`. |
 | 7. Vocabulary ablation | pending | Depends on Phase 5. |
 | 8. Robustness + sensitivity | done | 20 analyses + MGTOW contrast (D2). Tag `phase-8`. |
-| 9. Interpretation | pending | Depends on Phase 5. |
+| 9. Interpretation | done (analysis) | Outputs written; VALIDITY ISSUE found, see below. Tag `phase-9`. Phase 10 not started. |
 | 10. Paper draft | pending | Depends on Phases 5-9; then STOP at Gate 2. |
 
 ## Current environment
@@ -205,3 +205,16 @@ Task A (train 28,947 @6.6% pos; test 10,324 @8.4% pos, 870 positives):
 - Behavioural LightGBM across the 20 analyses: AUROC 0.774 (c10_w4_f180) to 0.858 (c50_w3_f90); AUPRC 0.149 to 0.408 (AUPRC tracks prevalence). Primary 0.836; comments-only 0.838; excluding near-coverage-start 0.835. 180-day variants are lower and use fewer users (test n=5,889) because of coverage truncation. No leakage flag.
 - Task B robustness was not extended: only 450 / 13 train/test users (D1).
 - MGTOW contrast (`scripts/run_mgtow_contrast.py`, `configs/mgtow.yaml`, dataset `real_mgtow`, reported separately): comments only, entrants to 2017-09; needed DEVIATIONS D2 (eligible-only split, 90-day grid, 0.5/0.3/0.2 fractions). Test n=4,833, 592 positives (12.2%): activity LR AUROC 0.842, behavioural LightGBM 0.875 (AUPRC 0.486), TF-IDF LR 0.760, combined 0.879 (AUPRC 0.512). Not comparable to the incels runs (different era, splits, and positives rate); only the qualitative pattern (behaviour >> text) matches.
+
+## Phase 9 record (done, 2026-10-24) and STOP: late-period cohort validity
+
+Outputs (`scripts/run_interpretation.py`; refit reproduces logged test AUROC 0.8365 exactly; all in `reports/results/real/`): validation permutation importance (`permutation_importance_val.csv`), SHAP mean-|value| and summary plot (validation sample), test/val by entry year and era.
+- Permutation importance (drop in validation AUPRC, behavioural LightGBM): `a_n` (contributions in the window) 0.158 by far; then reply-to-comment share 0.019, distinct threads 0.019, mean inter-event gap 0.017, time-to-Nth 0.014, comment share 0.011; text-derived features ~0.00-0.004.
+- Test entrants are all 2019-08 to 2020-06 (n=10,324; 9,601 enter via IncelsWithoutHate, 723 via Braincels); val 2018-09-19 to 2019-02 (2,114 Braincels, 1,817 IWH); train 2014-01 to 2018-02 (24,936 incels). By-year test AUROC 0.86 (2019), 0.82 (2020); val 0.87. Because the whole test split is post r/incels ban there is no within-test pre/post-ban contrast; the era comparison is confounded with the train/test split. Braincels-quarantine split not possible (snapshot).
+
+**VALIDITY ISSUE (needs a decision; not covered by ROADMAP/AGENTS/PREREG, so I stopped).** Braincels comments are observed only to 2018-09-19 (Braincels submissions run to 2019-08-31, when the sub ended), and the coverage override pins its coverage end at 2018-09-19. After that date the cohort rule treats Braincels as "not existing", so (a) users who were really active in Braincels in 2018-09..2019-08 but appear in the data first through IncelsWithoutHate (or via a stray Braincels submission) get a spurious "entry" t0, and (b) their post-cutoff Braincels activity is unobserved, biasing labels toward negative. This affects every val/test user (val >= 2018-09-19, test 2019-08..2020-06), so the headline test numbers (Phase 5-9) are measured on a population of questionable entry validity. It is not leakage (features stay before cutoff) but it is selection/measurement error, found after seeing test results. All test evaluations to date are in `reports/test_log.csv`.
+
+Options (user decision):
+- A (recommended): restrict the cohort to entrants with t0 <= 2018-09-19, the last date all target streams are observed; re-split; rerun Phases 4-9 as a documented second round (DEVIATIONS D3, old numbers kept and labelled superseded). Fast (hours). Smaller, older-era sample.
+- B: keep as is, disclose as a limitation. Fastest, weakest.
+- C: resume the Braincels comments download through 2019-08 (likely 1+ days, API flaky), then rerun. Best data, slow. A and C can be combined (A now, C later).
