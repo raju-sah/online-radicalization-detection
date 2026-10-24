@@ -26,7 +26,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score, f1_score, roc_auc_score
 from sklearn.preprocessing import StandardScaler
 
-MODEL_NAMES = ("majority", "activity_lr", "behaviour_lgbm", "tfidf_lr", "combined_lr")
+MODEL_NAMES = ("majority", "activity_lr", "behaviour_lr", "behaviour_lgbm", "tfidf_lr", "combined_lr")
 TEST_LOG_FIELDS = [
     "timestamp", "dataset", "task", "label", "model", "config_hash",
     "n_test", "pos_test", "auroc", "auprc", "f1", "ece",
@@ -147,7 +147,7 @@ def fit_predict_all(
     prior = float(train.y.mean())
     out["majority"] = {
         "val": np.full(len(val.y), prior), "test": np.full(len(test.y), prior),
-        "config": {"strategy": "train_prior"},
+        "config": {"strategy": "train_prior", "decision_threshold": 0.5},
     }
 
     def pick(candidates):
@@ -171,6 +171,14 @@ def fit_predict_all(
     if only is None or "activity_lr" in only:
         out["activity_lr"] = pick(act_cands())
 
+    if only is None or "behaviour_lr" in only:
+        sc = StandardScaler().fit(train.X)
+        def behaviour_cands():
+            for C in mc["lr_c_grid"]:
+                m = _fit_lr(sc.transform(train.X), train.y, C, seed)
+                yield {"C": C}, (lambda s, m=m: m.predict_proba(sc.transform(sets[s].X))[:, 1])
+        out["behaviour_lr"] = pick(behaviour_cands())
+
     # behavioural LightGBM
     pos_w = float((1 - prior) / max(prior, 1e-9))
     def lgb_cands():
@@ -179,6 +187,9 @@ def fit_predict_all(
             yield dict(g), (lambda s, m=m: m.predict_proba(sets[s].X)[:, 1])
     if only is None or "behaviour_lgbm" in only:
         out["behaviour_lgbm"] = pick(lgb_cands())
+
+    if only is not None and not {"tfidf_lr", "combined_lr"}.intersection(only):
+        return out
 
     # TF-IDF fit on train only
     tf = dict(mc["tfidf"]); tf["ngram_range"] = tuple(tf["ngram_range"])
@@ -192,7 +203,8 @@ def fit_predict_all(
         for C in mc["lr_c_grid"]:
             m = _fit_lr(T["train"], train.y, C, seed)
             yield {"C": C}, (lambda s, m=m: m.predict_proba(T[s])[:, 1])
-    out["tfidf_lr"] = pick(tf_cands())
+    if only is None or "tfidf_lr" in only:
+        out["tfidf_lr"] = pick(tf_cands())
 
     # combined
     sc2 = StandardScaler().fit(train.X)
@@ -202,7 +214,8 @@ def fit_predict_all(
         for C in mc["lr_c_grid"]:
             m = _fit_lr(comb("train"), train.y, C, seed)
             yield {"C": C}, (lambda s, m=m: m.predict_proba(comb(s))[:, 1])
-    out["combined_lr"] = pick(comb_cands())
+    if only is None or "combined_lr" in only:
+        out["combined_lr"] = pick(comb_cands())
     return out
 
 
@@ -295,7 +308,7 @@ def evaluate_task(
         if model not in preds:
             continue
         p = preds[model]
-        thr = best_f1_threshold(val.y, p["val"])
+        thr = 0.5 if model == "majority" else best_f1_threshold(val.y, p["val"])
         m = metrics(test.y, p["test"], thr, mc["ece_bins"])
         ci = bootstrap_ci(test.y, p["test"], thr, int(mc["bootstrap_n"]), int(mc["seed"]), mc["ece_bins"])
         chash = config_hash({"model": model, **p["config"], "excl": sorted(exclude_cols), "tag": tag})
@@ -345,7 +358,8 @@ def _reliability_plot(rel: pl.DataFrame, path: Path, title: str) -> None:
     ax.set_xlabel("mean predicted probability")
     ax.set_ylabel("observed positive rate")
     ax.set_title(title, fontsize=8)
-    ax.legend(fontsize=6)
+    if ax.get_legend_handles_labels()[0]:
+        ax.legend(fontsize=6)
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)

@@ -12,7 +12,8 @@ tool. Read the ethics section before touching data or code.
 
 1. **Hash usernames at ingestion.** Every author is replaced with a salted
    SHA-256 hash. The salt lives in `.env` as `RADPATH_SALT`; `.env` is
-   gitignored. Raw usernames must never appear in any file under
+   gitignored. Free text is discarded before persistence because it can contain identifiers.
+   Raw usernames must never appear in any file under
    `data/interim`, `data/processed`, `reports`, `logs`, or notebooks.
 2. **Never commit data.** `data/` and `.env` are gitignored. Do not commit
    raw dumps, parquet outputs, figures derived from real data, or logs.
@@ -83,6 +84,9 @@ Text features are especially risky; prefer aggregate behaviour counts.
 
 ## Current scope
 
-Phase 1 covers config, ingestion, cleaning, cohort/label construction,
-temporal splits, EDA, synthetic fixtures, and tests. Feature engineering
-beyond cohort counts, models, embeddings, and UI are explicitly deferred.
+The author authorized an exploratory preprint and supporting code release.
+The corrected release analysis is frozen in `configs/release.yaml` and uses
+creation-time posting metadata only. See DEVIATIONS D1-D6 for changes after
+the original local analysis plan. Historical text and embedding experiments
+are retained as historical artifacts; ingestion now discards free text.
+No individual scoring tool, UI, or per-user export is in scope.

@@ -1,0 +1,17 @@
+# Direct dependency versions used for the corrected analysis, Python 3.11.
+# Transitive packages and platform details are recorded in release/environment.json.
+polars==1.44.2
+pyarrow==26.0.0
+bencodepy==0.9.5
+zstandard==0.25.0
+orjson==3.13.0
+PyYAML==6.0.3
+python-dotenv==1.2.4
+tqdm==4.70.1
+scikit-learn==1.9.1
+lightgbm==4.7.0
+matplotlib==3.11.2
+pytest==9.1.1
+vaderSentiment==3.3.2
+numpy==2.4.6
+scipy==1.17.1

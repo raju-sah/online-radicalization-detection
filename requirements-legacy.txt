@@ -1,0 +1,5 @@
+# Optional dependencies for historical scripts, not needed for the release analysis.
+# Historical free-text analyses cannot be reproduced from minimized interim files.
+-r requirements.txt
+sentence-transformers>=6.2
+shap>=0.51

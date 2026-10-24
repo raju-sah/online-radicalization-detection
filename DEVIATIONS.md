@@ -72,3 +72,13 @@
 **Reason.** The flag was anchored at the earliest target record, 2014-01-04, but that is a handful of stray r/incels submissions: the incels data effectively begin in 2016-07 (905 users with t0 in 2016-07 versus about 15 before). The flag therefore marked only 1 user and the sensitivity analysis was ineffective at addressing left-censored entry times. This implements the preregistered intent; it changes only the flag column. Cohort membership, labels and splits are unchanged (checked).
 
 **Consequences.** The earlier `primary_excl_near_coverage_start` result (tag `excl_near_start`, AUROC 0.829) is superseded by the `excl_near_start_v2` result; both stay in `reports/test_log.csv`. The same left-censoring caveat applies to the Phase 5 to 9 round-1 results (superseded).
+
+## D6 (2026-10-24): corrected exploratory preprint analysis
+
+Before scoring the corrected release models, the author authorized preparation of an exploratory preprint and supporting code. The audit found that historical predictors included archive-time scores and missing-text status, whose values at the feature cutoff cannot be established. Historical text may also contain identifiers despite author-field hashing.
+
+The release analysis (`configs/release.yaml`, dataset `release_counts_v1`) uses only creation timestamps, record kinds, thread/reply structure and subreddit membership. It excludes scores, removal status and all text-derived features. The cohort, label definitions, D3-D5 split, validation tuning grids, seed and 1,000-resample bootstrap are unchanged. A behavioural-only logistic regression provides an additional comparison with the activity-count logistic regression. The true majority baseline retains training-prevalence probabilities for ranking/calibration, with a fixed 0.5 decision threshold. Historical baseline F1 values used a validation-tuned threshold and therefore represented an all-positive classifier; they are superseded.
+
+The prespecified release analyses are the nine 90-day threshold combinations, comments-only labels, and exclusion of near-start entrants. Each model is selected on validation AUPRC and evaluated once per analysis. The release is explicitly exploratory: this correction follows inspection of earlier test results, and the new dataset tag does not create an independent holdout. No new text ablation or 180-day result is claimed. Historical text and embedding results remain local historical artifacts, not evidence for claims about the absence of a content signal.
+
+New ingestion discards all free-text fields while retaining a text-presence flag only for diagnostics. Legacy interim files are minimized with `scripts/minimize_text.py` before release analysis. Data remain local and excluded from the release.

@@ -40,3 +40,24 @@ def test_test_log_refuses_repeat(tmp_path):
     with pytest.raises(RuntimeError):
         log_test_evaluation(path, row, allow_repeat=False)
     log_test_evaluation(path, row, allow_repeat=True)
+
+
+def test_majority_baseline_predicts_the_training_majority(tmp_path):
+    """Validation F1 tuning must not turn the majority baseline all-positive."""
+    import polars as pl
+    from radpath.config import load_config
+    from radpath.models import evaluate_task
+
+    keys = [f"synthetic_{i}" for i in range(30)]
+    cohort = pl.DataFrame({
+        "author_hash": keys, "split": [s for s in ("train", "val", "test") for _ in range(10)],
+        "label": [i % 10 == 0 for i in range(30)],
+    })
+    feats = pl.DataFrame({"author_hash": keys, "a_n": [float(i % 5 + 1) for i in range(30)]})
+    texts = pl.DataFrame({"author_hash": keys, "doc": [""] * 30})
+    cfg = load_config()
+    cfg["models"]["bootstrap_n"] = 10
+    result = evaluate_task(feats, texts, cohort, "a", "label", cfg, tmp_path,
+                           tmp_path / "test_log.csv", "synthetic_majority", only=("majority",))
+    assert result["model"].to_list() == ["majority"]
+    assert result["f1"][0] == 0.0

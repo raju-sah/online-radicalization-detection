@@ -259,10 +259,12 @@ def prepare_record(
         "subreddit": str(subreddit).strip().lower(),
         "kind": "comment" if kind == "comments" else "submission",
         "created_utc": created_utc,
-        "title": title,
-        "selftext": selftext,
-        "body": body,
-        "text": text,
+        # Free text can contain usernames and other identifying details.
+        # Retain its presence for acquisition diagnostics, never its content.
+        "title": "",
+        "selftext": "",
+        "body": "",
+        "text": "",
         "has_text": bool(text.strip()),
         "score": _as_int(record.get("score")),
         "num_comments": _as_int(record.get("num_comments")),

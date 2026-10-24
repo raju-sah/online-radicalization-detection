@@ -1,0 +1,158 @@
+# Frozen before the corrected release test evaluations; see DEVIATIONS D6.
+paths:
+  raw: data/raw
+  interim: data/interim
+  processed: data/processed
+  reports: reports
+target_subreddits:
+- incels
+- Braincels
+- IncelsWithoutHate
+control_subreddits:
+- IncelTears
+- MGTOW
+gateway_subreddits:
+- ForeverAlone
+- lonely
+- socialanxiety
+- dating_advice
+- short
+- Tinder
+feature_window:
+  first_n: 5
+  days: 14
+pre_entry_days: 180
+followup_days: 90
+deep_min_contributions: 20
+deep_min_active_weeks: 4
+robustness:
+  min_contributions:
+  - 10
+  - 20
+  - 50
+  min_active_weeks:
+  - 3
+  - 4
+  - 8
+  followup_days:
+  - 90
+  - 180
+  comments_only: true
+coverage_overrides:
+  Braincels:
+    end_utc: 1537392628
+  IncelsWithoutHate:
+    end_utc: 1600363688
+entry_cutoff_utc: 1537392628
+coverage:
+  near_start_days: 30
+  near_start_anchor_utc: '2016-07-01'
+sensitivity:
+  exclude_near_coverage_start: true
+split:
+  train: 0.5
+  val: 0.25
+  test: 0.25
+split_options:
+  eligible_only: true
+  embargo_followup_days: 90
+seed: 42
+ingest:
+  batch_size: 20000
+  restrict_to_config_subreddits: true
+  extra_subreddits: []
+clean:
+  bot_name_suffixes:
+  - bot
+  extra_bot_names:
+  - AutoModerator
+  - BotDefense
+  - RemindMeBot
+  deleted_values:
+  - '[deleted]'
+  - '[removed]'
+  bot_author_warn_fraction: 0.01
+eda:
+  top_n_subreddits: 10
+download:
+  torrent_url: https://academictorrents.com/download/56aa49f9653ba545f48df2e33679f014d2829c10.torrent
+  torrent_magnet: magnet:?xt=urn:btih:56aa49f9653ba545f48df2e33679f014d2829c10
+  arctic_shift_base_url: https://arctic-shift.photon-reddit.com
+  user_agent: radpath/0.1 (academic research; aggregate analysis)
+  torrent_dir: data/raw/_torrent
+  checkpoint_dir: data/raw/_checkpoints
+  manifest: data/raw/download_manifest.json
+  log_path: reports/download.log
+  api_limit: auto
+  api_window_days: 30
+  api_min_interval_seconds: 1.0
+  api_max_retries: 5
+  api_backoff_seconds: 2.0
+  api_timeout_seconds: 60
+  torrent_metadata_timeout_seconds: 600
+  min_free_gb: 5
+models:
+  seed: 42
+  bootstrap_n: 1000
+  ece_bins: 10
+  leakage_auroc_flag: 0.95
+  lr_c_grid:
+  - 0.01
+  - 0.1
+  - 1.0
+  - 10.0
+  lgbm_grid:
+  - num_leaves: 7
+    n_estimators: 100
+    learning_rate: 0.05
+  - num_leaves: 15
+    n_estimators: 200
+    learning_rate: 0.05
+  lgbm_common:
+    min_child_samples: 20
+    subsample: 0.8
+    subsample_freq: 1
+    colsample_bytree: 0.8
+  tfidf:
+    max_features: 20000
+    min_df: 3
+    ngram_range:
+    - 1
+    - 2
+    sublinear_tf: true
+eras:
+  incels_ban_utc: '2017-11-07'
+release_analysis:
+  dataset: release_counts_v1
+  models:
+  - majority
+  - activity_lr
+  - behaviour_lr
+  - behaviour_lgbm
+  creation_time_only: true
+  analyses:
+  - name: primary
+    variant: c20_w4_f90
+  - name: c10_w3_f90
+    variant: c10_w3_f90
+  - name: c10_w4_f90
+    variant: c10_w4_f90
+  - name: c10_w8_f90
+    variant: c10_w8_f90
+  - name: c20_w3_f90
+    variant: c20_w3_f90
+  - name: c20_w8_f90
+    variant: c20_w8_f90
+  - name: c50_w3_f90
+    variant: c50_w3_f90
+  - name: c50_w4_f90
+    variant: c50_w4_f90
+  - name: c50_w8_f90
+    variant: c50_w8_f90
+  - name: comments_only
+    variant: c20_w4_f90_comments
+  - name: exclude_near_start
+    variant: c20_w4_f90
+    exclude_near_start: true
+  permutation_repeats: 5
+  min_aggregate_cell: 10

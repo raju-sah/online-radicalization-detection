@@ -112,7 +112,7 @@ def main(argv: list[str] | None = None) -> None:
     pl.DataFrame({"feature": cols, "mean_abs_shap": mean_abs}).sort("mean_abs_shap", descending=True).write_csv(
         results / "shap_mean_abs_val.csv"
     )
-    shap.summary_plot(sv, Xva[idx], feature_names=cols, show=False, max_display=15)
+    shap.summary_plot(sv, Xva[idx], feature_names=cols, plot_type="bar", show=False, max_display=15)
     plt.tight_layout()
     plt.savefig(results / "shap_summary_val.png", dpi=150)
     plt.close()

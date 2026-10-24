@@ -233,6 +233,7 @@ def build_task_features(
     feature_days: int = 14,
     pre_entry_days: int = 180,
     with_text_stats: bool = True,
+    creation_time_only: bool = False,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Build behavioural features and per-user text for one task.
 
@@ -246,6 +247,7 @@ def build_task_features(
         feature_days: Task A window cap in days.
         pre_entry_days: Task B look-back.
         with_text_stats: Compute VADER/length features (slower).
+        creation_time_only: Exclude archived scores, text and removal status.
 
     Returns:
         ``(features, texts)`` keyed by ``author_hash``.
@@ -259,10 +261,14 @@ def build_task_features(
         first_n=first_n if task == "a" else None,
         window_seconds=feature_days * SECONDS_PER_DAY,
     )
-    if with_text_stats:
+    if creation_time_only:
+        feats = feats.drop(f"{task}_score_mean", f"{task}_score_median", f"{task}_no_text_share")
+    if with_text_stats and not creation_time_only:
         feats = feats.join(text_stat_features(recs, cohort, task), on="author_hash")
     if task == "b":
         feats = feats.join(gateway_features(recs, cohort, gateways), on="author_hash")
+    if creation_time_only:
+        return feats, cohort.select("author_hash").with_columns(pl.lit("").alias("doc"))
     return feats, user_texts(recs, cohort)
 
 

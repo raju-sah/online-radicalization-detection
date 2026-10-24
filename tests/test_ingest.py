@@ -269,3 +269,17 @@ def test_get_salt_rejects_placeholder(monkeypatch: pytest.MonkeyPatch) -> None:
         get_salt()
     monkeypatch.setenv("RADPATH_SALT", "a-real-salt-0123456789")
     assert get_salt() == "a-real-salt-0123456789"
+
+
+def test_ingest_discards_identifiers_embedded_in_free_text(tmp_path: Path) -> None:
+    """Hashing the author must not leave names in persisted content."""
+    raw = tmp_path / "mention.zst"
+    _write_zst(raw, [_submission(
+        "s1", "synthetic_author", title="synthetic_author introduces himself",
+        selftext="Reply to u/synthetic_other and https://example.org/profile",
+    )])
+    ingest_file(FileSpec(raw, "submissions"), tmp_path / "out", SALT)
+    frame = pl.read_parquet(tmp_path / "out" / "mention.parquet")
+    assert frame["has_text"].to_list() == [True]
+    for name in ("title", "selftext", "body", "text"):
+        assert frame[name].to_list() == [""]
