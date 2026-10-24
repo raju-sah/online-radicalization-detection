@@ -1,16 +1,26 @@
 cff-version: 1.2.0
-message: "Cite the exploratory preprint and identify the software version used."
-title: "radpath: early posting behaviour and later deep engagement in Reddit communities"
+message: Cite the exploratory source-only preprint and identify software version 0.1.0.
+title: 'radpath: early posting behaviour and later deep engagement in Reddit communities'
 type: software
 version: 0.1.0
-authors:
-  - family-names: Sah
-    given-names: Raju
-    affiliation: Independent researcher
-    orcid: https://orcid.org/0009-0006-0412-6139
+authors: &id001
+- family-names: Sah
+  given-names: Raju
+  affiliation: Independent researcher
+  orcid: https://orcid.org/0009-0006-0412-6139
 license: MIT
-abstract: >-
-  Aggregate observational research pipeline with temporal splits, synthetic
-  tests, and an exploratory metadata-only engagement analysis. No Reddit data
-  or per-user predictions are distributed. The release is awaiting author
-  review and is not a peer-reviewed publication.
+abstract: Aggregate observational research pipeline with temporal splits, synthetic
+  tests, and an exploratory metadata-only engagement analysis. No Reddit data or per-user
+  predictions are distributed. Version 0.1.0 was published as manuscript sources and
+  code; no compiled PDF is included. The study is not peer-reviewed.
+url: https://zenodo.org/records/23621539
+preferred-citation:
+  type: article
+  title: 'Early Posting Behaviour and Later Deep Engagement in Incel Communities on
+    Reddit: An Exploratory Observational Study'
+  authors: *id001
+  journal: Zenodo
+  year: 2026
+  doi: 10.5281/zenodo.23621539
+  url: https://zenodo.org/records/23621539
+  version: 0.1.0

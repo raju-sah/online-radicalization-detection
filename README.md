@@ -8,8 +8,11 @@ radicalization, intent, or dangerousness.
 
 The repository contains ingestion, cohort construction, temporal splits,
 aggregate EDA, models, synthetic tests, and a preprint source in `paper/main.tex`.
-The current release analysis uses posting metadata only. The manuscript and
-release are being prepared for author review before Zenodo publication.
+The current release analysis uses posting metadata only. Version 0.1.0 is published as manuscript sources and supporting code on
+[Zenodo](https://zenodo.org/records/23621539), DOI
+[10.5281/zenodo.23621539](https://doi.org/10.5281/zenodo.23621539).
+No compiled PDF is included; compilation and whole-document layout verification
+remain unverified. The public record explicitly discloses this source-only status.
 
 ## Research design
 
@@ -160,4 +163,6 @@ cohort and feature choices, so the results are exploratory.
 
 See `release/RELEASE.md` for the exact packaging commands and review gates. Code
 uses MIT (`LICENSE`); the manuscript uses CC BY 4.0 (`paper/LICENSE.md`). Third-party
-sources retain their own rights. A DOI is added only after Zenodo supplies it.
+sources retain their own rights. The published source-only preprint DOI is `10.5281/zenodo.23621539`.
+The archived version preserves the pre-publication code snapshot; subsequent
+repository bookkeeping does not change those published archive bytes.

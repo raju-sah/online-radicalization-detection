@@ -270,3 +270,11 @@ Caveats to carry into the paper: incels data effectively start 2016-07 (entry le
 - A full repeat of the release command reused all 44 saved evaluations, with no additional test-log rows.
 - Tests: 75 passed. Regression checks reproduced the free-text retention and majority/model-selection defects before fixes, then passed. Creation-time feature invariance and idempotent text minimization are tested on synthetic data. `pip check` passes.
 - Remaining release blocker: the built-in LaTeX compiler cannot fetch its uncached bundle from `relay.fullyjustified.net`; the bundle endpoint also returned HTTP 403 in a connectivity check. Three compilation attempts failed before TeX processing. No separate PDF was compiled and no other editor tab was opened. The current source remains in the original editor. PDF compilation, whole-document visual inspection, author scientific review, and the final Zenodo publication remain pending. The source-only package is explicitly marked incomplete.
+
+## Zenodo source-only publication (2026-10-24)
+
+- User explicitly instructed publication after being informed that no compiled PDF was available. Published version 0.1.0 as an open preprint containing manuscript sources and supporting code. The description and default-preview PUBLICATION-NOTES.txt prominently state that PDF compilation/layout verification is unverified and the study is exploratory.
+- Record: https://zenodo.org/records/23621539. Version DOI: 10.5281/zenodo.23621539. All-versions DOI: 10.5281/zenodo.23621538. Verified the public record after the publish confirmation; it has no preview query or unpublished banner.
+- Six files were published. All six displayed MD5 checksums match the audited local files. No raw or user-level research data were uploaded. Supporting code is MIT, manuscript CC BY 4.0, author Raju Sah, Independent researcher, ORCID 0009-0006-0412-6139.
+- Published archive bytes are preserved. Local citation/readme updates after publication are bookkeeping for future versions, not edits to the published zip archives. PDF compilation and full visual review remain unfinished despite source publication.
+- Publication evidence screenshot is local at output/release/zenodo-published.jpg.

@@ -1,0 +1,18 @@
+{
+  "record_url": "https://zenodo.org/records/23621539",
+  "doi": "10.5281/zenodo.23621539",
+  "concept_doi": "10.5281/zenodo.23621538",
+  "version": "0.1.0",
+  "publication_date": "2026-10-24",
+  "status": "published-source-only",
+  "pdf_included": false,
+  "pdf_compilation_verified": false,
+  "published_files": [
+    "radpath-code-0.1.0.zip",
+    "radpath-manuscript-source-0.1.0.zip",
+    "PUBLICATION-NOTES.txt",
+    "manifest.json",
+    "SHA256SUMS",
+    "zenodo-metadata.json"
+  ]
+}
