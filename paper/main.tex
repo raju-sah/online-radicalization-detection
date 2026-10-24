@@ -1,0 +1,117 @@
+% Draft. All numbers come from generated/numbers.tex and the generated tables
+% (scripts/make_paper.py). Replace the layout below with the official ACL style
+% (acl.sty) when submitting; no LaTeX compiler was available when this was drafted.
+\documentclass[10pt,twocolumn]{article}
+\usepackage[margin=0.75in,columnsep=0.25in]{geometry}
+\usepackage{booktabs,graphicx,hyperref,amsmath,times}
+\input{generated/numbers}
+\newcommand{\todocite}[1]{\textbf{[TODO: cite #1]}}
+
+\title{Early Behaviour and Later Deep Engagement Among New Contributors to Incel Communities on Reddit: An Aggregate Observational Study}
+\author{Anonymous (draft for review)}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We ask, at the aggregate level, whether behaviour in the first two weeks after a user's first contribution to an incel-related subreddit predicts sustained deep engagement in the following 90 days. Using a temporally split cohort of \NEligA{} label-observable users drawn from \NKept{} cleaned Reddit records, simple behavioural features reach a test AUROC of \AurocCILgbm{} (combined with text features: \AurocCIComb{}), against an activity-count baseline of \AurocCIAct{}. Early \emph{volume} carries most of the signal; text adds little, and its signal is not carried by community-specific vocabulary in a (round-one) ablation. The data are a partial snapshot, several planned analyses could not be completed, and we document every deviation from the preregistered plan. This is observational research on aggregate behaviour; it is not a detection, moderation, or profiling method, and no per-user scoring is provided or intended.
+\end{abstract}
+
+\section{Introduction}
+Online communities organised around involuntary celibacy and related grievances have been linked to harmful offline and online outcomes \todocite{incel-related harms}. Understanding how newcomers' first interactions relate to later deep involvement is a descriptive question about pathways, distinct from the question of identifying individuals. We pose the former: among users making a first contribution to target communities, how well do early or pre-entry behavioural aggregates distinguish those who later become deeply engaged? We state why the latter is out of scope in Section~\ref{sec:ethics}.
+
+\paragraph{Contributions.} (i) A preregistered, leakage-controlled design with user-level temporal splits, mandatory trivial baselines and calibration reporting; (ii) results for early-window prediction of deep engagement with bootstrap confidence intervals; (iii) a sensitivity analysis over label definitions; (iv) a transparent record of data and design deviations.
+
+\section{Related Work}
+\todocite{studies of incel and manosphere communities on Reddit}. \todocite{work on community entry, engagement and retention prediction}. \todocite{moderation interventions, quarantines and bans and their effects on migration}. \todocite{ethics of research on extremist and sensitive online communities}.
+
+\section{Data and Ethics}\label{sec:ethics}
+\paragraph{Sources.} Public Reddit comments and submissions for r/incels, r/Braincels and r/IncelsWithoutHate (targets), r/IncelTears and r/MGTOW (comparison), and six gateway communities were retrieved through the Arctic Shift subreddit-level API. Only subreddit-level endpoints were used; no per-user endpoints were queried.
+
+\paragraph{Partial snapshot.} Acquisition was repeatedly interrupted by API errors and the torrent route found no peers, so we froze the data at a partial snapshot (Table~\ref{tab:streams}, Appendix). \NRead{} records were read and \NKept{} kept after removing deleted and automated accounts (\NAuthorsAll{} distinct hashed authors). r/incels is complete (\NIncelsComments{} comments); Braincels and IncelsWithoutHate comments are partial, and gateway streams are mostly missing.
+
+\paragraph{Ethical safeguards.} Usernames are replaced at ingestion by salted SHA-256 hashes; raw usernames never appear in derived files. Raw data and data-derived figures are not distributed. Reports contain aggregate numbers only. We do not release per-user predictions, perform per-user lookups, or provide any tool for scoring individuals. Text features carry re-identification risk, so we use aggregate behaviour counts as the primary features and treat text as a secondary, aggregate-only signal. \todocite{institutional review determination}
+
+\section{Methods}
+\paragraph{Cohort and label.} A user enters at their first contribution ($t_0$) to a target community. The Task~A feature window ends at the earlier of the fifth contribution and 14 days after $t_0$. The primary label is \emph{deep engagement}: at least 20 contributions in at least 4 distinct weeks within 90 days strictly \emph{after} the feature cutoff. Labels are null (not negative) when the follow-up window extends beyond the observed coverage of a target community that existed at entry. Task~B (pre-entry features from gateway communities) was planned but is not estimable on this snapshot.
+
+\paragraph{Features.} Within the window only: contribution count, comment share, active days, inter-event time statistics, hour-of-day entropy, weekend share, distinct threads and subreddits, share of comments replying to comments, score statistics, share of records with removed text, time to the fifth contribution; for records with text, length statistics, VADER sentiment, TF-IDF (fit on training users only) and mean-pooled MiniLM sentence embeddings. Leakage is excluded by construction and by tests that append post-cutoff records and verify features are unchanged.
+
+\paragraph{Splits and models.} Users are split temporally and at user level (earliest entrants train, latest test); label windows crossing a boundary are embargoed. Models: majority class; activity-count logistic regression (LR); behavioural LightGBM; TF-IDF LR; combined (behaviour + TF-IDF) LR; MiniLM-embedding LR and LightGBM. Class imbalance is handled with class weights; nothing is resampled. Hyperparameters and the F1 threshold are chosen on validation; the test split is scored once per final configuration and every test evaluation is logged (\NTestEvals{} logged evaluations across all rounds; the largest test AUROC in any evaluation was \MaxTestAuroc{}, below the preregistered 0.95 leakage trigger). Confidence intervals come from a 1{,}000-resample user-level bootstrap of the test set.
+
+\section{Results}
+\paragraph{Cohort.} After restricting to label-observable users the split has \NTrain{} training (\PosTrain{} positives, \RateTrain\%), \NVal{} validation (\PosVal{}, \RateVal\%) and \NTest{} test users (\PosTest{}, \RateTest\%) users; the cohort of all entrants numbers \NCohort{} (\NEligA{} label-observable, \NDeepA{} deep, \PctDeepA\%).
+
+\begin{table}[t]\centering\small\setlength{\tabcolsep}{3pt}
+\input{generated/tab_main}
+\caption{Task A test performance, primary label (round two).}\label{tab:main}
+\end{table}
+
+\paragraph{Main result.} Table~\ref{tab:main} shows that behavioural LightGBM (AUROC \AurocLgbm{}) and the combined model (\AurocComb{}) improve on the activity-count baseline (\AurocAct{}) and far exceed the majority baseline (AUPRC \AuprcMaj{}, the test prevalence). TF-IDF alone reaches \AurocTfidf{}; mean sentence embeddings reach \AurocEmbLgbm{} with LightGBM and \AurocEmbLr{} with LR. Class-weighted models are poorly calibrated in absolute terms (ECE in Table~\ref{tab:main}); ranking metrics are the meaningful ones, and we did not apply post-hoc calibration because it was not preregistered. Figure~\ref{fig:cal} shows reliability curves.
+
+\begin{figure}[t]\centering
+\includegraphics[width=0.8\columnwidth]{figures/reliability}
+\caption{Reliability curves on the test split.}\label{fig:cal}
+\end{figure}
+
+\paragraph{What carries the signal.} Validation permutation importance (Table~\ref{tab:imp}, Figure~\ref{fig:shap}) is dominated by the number of contributions in the window (AUPRC drop \ImpTop{}); text-derived features contribute almost nothing. The early signal is therefore largely how quickly and how widely a user posts, not what they say.
+
+\begin{table}[t]\centering\small
+\input{generated/tab_importance}
+\caption{Top features by permutation importance (validation).}\label{tab:imp}
+\end{table}
+
+\begin{figure}[t]\centering
+\includegraphics[width=0.9\columnwidth]{figures/shap_summary}
+\caption{SHAP summary of the behavioural LightGBM on a validation sample.}\label{fig:shap}
+\end{figure}
+
+\paragraph{Sensitivity.} Across \NRobust{} analyses (threshold variants with 90-day follow-up, a comments-only label, and exclusion of users entering near the start of coverage) behavioural LightGBM AUROC ranges from \RobAurocLow{} to \RobAurocHigh{} (Table~\ref{tab:rob}, Figure~\ref{fig:forest}); comments-only gives \AurocCommentsOnly{} and excluding near-start users \AurocNear{}. \NNotEst{} variants with 180-day follow-up could not be estimated because their windows exceed observed coverage.
+
+\begin{table}[t]\centering\scriptsize\setlength{\tabcolsep}{2pt}
+\input{generated/tab_robust}
+\caption{Sensitivity of behavioural LightGBM to label definition.}\label{tab:rob}
+\end{table}
+
+\begin{figure}[t]\centering
+\includegraphics[width=\columnwidth]{figures/robustness_forest}
+\caption{Forest plot of sensitivity analyses (95\% CIs).}\label{fig:forest}
+\end{figure}
+
+\paragraph{Vocabulary ablation.} We ranked terms by weighted log-odds with an informative Dirichlet prior (training users versus a contrast community) and removed the top $k$ terms before refitting text models. \emph{In the final (round-two) cohort the contrast corpus is empty} (\NContrastTextsRTwo{} texts) because the contrast community's submissions begin after the training period, so that ablation is uninformative. In the superseded round one (\NVocabDocsROne{} training documents, \NContrastTextsROne{} contrast texts), removing 50, 200 or 1000 terms did not reduce performance (Table~\ref{tab:vocab}). We treat this as indicative only; the contrast corpus consists of submissions whereas target text is mostly comments.
+
+\begin{table}[t]\centering\small
+\input{generated/tab_vocab}
+\caption{Round-one vocabulary ablation (superseded cohort).}\label{tab:vocab}
+\end{table}
+
+\paragraph{Task B and comparison community.} Task B has only \NTestB{} test users (\PosTestB{} positives), with AUROC between \AurocBLow{} and \AurocBHigh{} and confidence intervals that include chance; we do not interpret it. A separately reported comparison on r/MGTOW (comments only, a different era and split; Appendix) gives AUROC \AurocMgLgbm{} for behavioural LightGBM, \AurocMgAct{} for activity count and \AurocMgTfidf{} for TF-IDF on \NTestMg{} test users (\PosTestMg{} positives), the same qualitative pattern.
+
+\section{Limitations}
+\begin{itemize}\itemsep0pt
+\item \textbf{Partial data.} The snapshot is incomplete (Appendix); the sample is dominated by r/incels entrants from mid-2016 to 2018. Data before 2016-07 are essentially absent, so entry is left-censored for early users.
+\item \textbf{Cohort restriction.} Entrants after 2018-09-19 were removed because Braincels comments are unobserved afterwards; the restriction was decided after first-round test results were seen, for data-validity reasons (D3).
+\item \textbf{Split design.} The final split is computed over label-observable users with a 90-day embargo and unusual fractions (D4); the test set contains only 2018 entrants, so no within-test era comparison is possible.
+\item \textbf{Task B and text.} Task B is not estimable; the text ablation needs a longer contrast corpus.
+\item \textbf{Label scope.} Deep engagement is defined by activity thresholds in target subreddits only; it is not a measure of ideology or risk, and activity elsewhere or on deleted content is not observed.
+\item \textbf{Calibration and construct.} Probabilities are not calibrated; the dominant feature, early volume, is a behavioural rather than a causal marker.
+\end{itemize}
+
+\section{Conclusion}
+Early posting volume and tempo, not content, carry most of the measurable signal about who becomes deeply engaged among new contributors to incel-related communities in this partial snapshot. Findings are descriptive and aggregate; they should not be used to flag or score individuals.
+
+\section*{Ethics Statement}
+The study analyses public data at the aggregate level with hashed identifiers. It does not release data, per-user outputs or a scoring tool. \todocite{institutional review / ethics approval status}
+
+\appendix
+\section{Data Snapshot}
+\begin{table}[h]\centering\scriptsize\setlength{\tabcolsep}{2pt}
+\input{generated/tab_streams}
+\caption{Snapshot used in the analysis (aggregate counts).}\label{tab:streams}
+\end{table}
+
+\section{Deviations from the Preregistered Plan}
+All deviations are recorded with date and reason in \texttt{DEVIATIONS.md}: D1 (freeze the dataset at the partial download, with coverage overrides), D2 (alternative split for the MGTOW comparison), D3 (restrict to entrants on or before 2018-09-19), D4 (final split rule), and D5 (anchor of the near-coverage-start flag). The preregistered amendment moved MGTOW from a target to a comparison community.
+
+\end{document}

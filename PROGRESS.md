@@ -19,7 +19,7 @@ are in `PREREGISTRATION.md`.
 | 7. Vocabulary ablation | pending | Depends on Phase 5. |
 | 8. Robustness + sensitivity | done | 20 analyses + MGTOW contrast (D2). Tag `phase-8`. |
 | 9. Interpretation | done (analysis) | Outputs written; VALIDITY ISSUE found, see below. Tag `phase-9`. Phase 10 not started. |
-| 10. Paper draft | pending | Depends on Phases 5-9; then STOP at Gate 2. |
+| 10. Paper draft | done — STOP (Gate 2) | `paper/main.tex` + `scripts/make_paper.py`; awaiting user review. Tag `phase-10`. |
 
 ## Current environment
 
@@ -242,3 +242,15 @@ Robustness (behavioural LightGBM, 11 analyses): AUROC 0.802 to 0.840 across 9 th
 Interpretation: permutation importance (validation, AUPRC drop): contributions in the window `a_n` 0.102, distinct threads 0.044, mean inter-event gap 0.028, reply-to-comment share 0.021, time-to-Nth 0.019; text features ~0. Test set is entirely 2018 entrants (post r/incels ban) so there is no within-test era contrast; the validation set spans 2017 (AUROC 0.80) and 2018 (n=137, AUROC 0.71).
 MGTOW contrast (Phase 8, `real_mgtow`) was not rerun: it uses its own cohort/config (D2) and does not depend on the incels/Braincels cohort rules; behavioural LightGBM AUROC 0.875 there.
 Caveats to carry into the paper: incels data effectively start 2016-07 (entry left-censored for early users); Braincels/IWH comments partial; Task B and IncelTears ablation are weak (D1); class-weighted models are miscalibrated (ECE ~0.2-0.4) and no post-hoc calibration was preregistered; early volume (`a_n`) dominates, so the 'early signal' is largely how quickly a user posts.
+
+## Phase 10 record (done, 2026-10-24) — STOP at Gate 2: ready for review
+
+- `paper/main.tex` (single-file two-column article draft; abstract, intro, related work with TODO citations only, data+ethics, methods, results, limitations, conclusion, appendices). `scripts/make_paper.py` generates `paper/generated/numbers.tex` (57 macros) and 6 tables from `reports/` and copies 3 figures to `paper/figures`; no number is typed by hand. Generated tables/figures are gitignored (derived from real data); regenerate with `python scripts/make_paper.py`.
+- No LaTeX compiler (pdflatex/latexmk/tectonic) on this machine, so the PDF has NOT been built or visually checked; the layout is a plain two-column article, to be swapped for the official ACL `acl.sty`.
+- Items for the user at review:
+  1. Round-2 vocabulary ablation is invalid: the IncelTears contrast corpus has 0 texts because IncelTears submissions begin after the training period (train ends ~2017-08). The paper reports the superseded round-1 ablation (8,608 contrast texts) as indicative only. Decision needed: relax the contrast-time restriction (violates "train split only" in spirit) or drop the ablation / get IncelTears comments.
+  2. All citations are TODO placeholders (no invented references); ethics/IRB statement is a TODO.
+  3. Test numbers rest on D1-D5 deviations (partial data, post-hoc cohort restriction after seeing round-1 test results, unusual split). Disclosed in the paper and DEVIATIONS.md.
+  4. Task B is not estimable (142 test users); the 180-day sensitivity variants are not estimable.
+  5. Calibration: class-weighted models have ECE 0.2-0.4; no post-hoc calibration (not preregistered).
+- Reports/test_log.csv holds every test evaluation (rounds `real`, `real_r2`, `real_mgtow`); max AUROC in any is below 0.95.
