@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "Cite the exploratory preprint and identify the software version used."
+title: "radpath: early posting behaviour and later deep engagement in Reddit communities"
+type: software
+version: 0.1.0
+authors:
+  - family-names: Sah
+    given-names: Raju
+    affiliation: Independent researcher
+    orcid: https://orcid.org/0009-0006-0412-6139
+license: MIT
+abstract: >-
+  Aggregate observational research pipeline with temporal splits, synthetic
+  tests, and an exploratory metadata-only engagement analysis. No Reddit data
+  or per-user predictions are distributed. The release is awaiting author
+  review and is not a peer-reviewed publication.

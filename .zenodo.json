@@ -1,0 +1,24 @@
+{
+  "upload_type": "publication",
+  "publication_type": "preprint",
+  "title": "Early Posting Behaviour and Later Deep Engagement in Incel Communities on Reddit: An Exploratory Observational Study",
+  "creators": [
+    {
+      "name": "Sah, Raju",
+      "affiliation": "Independent researcher",
+      "orcid": "0009-0006-0412-6139"
+    }
+  ],
+  "description": "Exploratory observational study of early posting metadata and subsequent sustained participation in selected Reddit communities. The corrected analysis excludes archived scores, removal status and text. It uses temporal user-level splits and reports class balance, AUROC, AUPRC, F1 and calibration. The snapshot is partial and earlier test inspection informed design corrections. Independent replication is required. No formal ethics review was sought. No external funding or competing interests are declared. OpenAI Codex and Anthropic Claude assisted with the project; the author retains responsibility. The manuscript is licensed CC BY 4.0; supporting code is separately licensed MIT. No Reddit archives, user-level data, hashes, text, predictions or scoring service are provided.",
+  "version": "0.1.0",
+  "license": "cc-by-4.0",
+  "access_right": "open",
+  "keywords": [
+    "observational research",
+    "online communities",
+    "Reddit",
+    "sustained engagement",
+    "temporal evaluation",
+    "reproducibility"
+  ]
+}

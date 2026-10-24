@@ -1,6 +1,6 @@
 # radpath progress
 
-Last updated: 2026-10-22T15:55Z
+Last updated: 2026-10-24T15:26Z
 
 This file is the running memory for the autonomous roadmap. Re-read it after a
 long context break. The roadmap is in `ROADMAP.md`; the frozen analysis choices
@@ -258,3 +258,15 @@ Caveats to carry into the paper: incels data effectively start 2016-07 (entry le
 ## Gate 2 decision (2026-10-24)
 
 - User accepted the recommendation for the vocabulary ablation: keep the round-1 result as indicative only and disclose that the round-2 contrast corpus is empty (current paper text). No new ablation run, no new deviation. Remaining before submission: build the PDF with the official ACL style, fill citation/ethics TODOs.
+
+## Exploratory preprint release preparation (2026-10-24)
+
+- Author confirmed Raju Sah as sole author, Independent researcher, ORCID 0009-0006-0412-6139. No formal ethics review was sought; no external funding or competing interests declared. Manuscript CC BY 4.0, supporting code MIT. AI assistance from OpenAI Codex and Anthropic Claude is disclosed without claiming completed author verification.
+- D6 freezes the corrected analysis in `configs/release.yaml`. Dataset `release_counts_v1` uses the existing round-two cohort and split, excludes archived scores/removal status/text, adds metadata-only LR, and corrects the majority decision threshold to 0.5. All 11 declared analyses completed; 44 unique model evaluations are in `reports/test_log.csv`. The prior test population was already inspected, so no independent confirmation is claimed.
+- Primary test n=11,616, positives=1,201 (10.3%). Activity LR: AUROC 0.788, AUPRC 0.231, F1 0.379, ECE 0.299, Brier 0.208. Metadata LR: 0.841 / 0.341 / 0.439 / 0.270 / 0.185. Metadata LightGBM: 0.842 / 0.341 / 0.441 / 0.249 / 0.168. The corrected majority baseline has F1 0, AUROC 0.5, AUPRC 0.103, ECE 0.042, Brier 0.094. Calibration remains poor; metadata LightGBM sensitivity AUROC spans 0.829-0.859. No release evaluation crosses the 0.95 trigger.
+- Ingestion now discards all free text before persistence. Existing interim files were minimized in 18 streaming rewrites with all 5,228,874 rows retained. The legacy vocabulary list was moved to excluded raw storage. Raw archives remain local; no data was acquired during this work.
+- Rewrote the current `paper/main.tex` in place as an exploratory metadata-only preprint. Replaced citation placeholders with eight verified references, added disclosures, narrowed content/causal claims, and described source missingness, post-hoc choices and probabilistic miscalibration. The generator produces 30 numeric macros, four tables and two aggregate-only figures; both figures were inspected. Historical text and embedding results are not used as evidence for the corrected paper.
+- Added licenses, citation information, draft Zenodo metadata, tested dependency versions, an environment inventory and an allowlisted package builder. Source-only review archives are under `output/release/` and are ignored by Git. No user-level data, hashes, text, logs, embeddings or secrets are packaged.
+- A full repeat of the release command reused all 44 saved evaluations, with no additional test-log rows.
+- Tests: 75 passed. Regression checks reproduced the free-text retention and majority/model-selection defects before fixes, then passed. Creation-time feature invariance and idempotent text minimization are tested on synthetic data. `pip check` passes.
+- Remaining release blocker: the built-in LaTeX compiler cannot fetch its uncached bundle from `relay.fullyjustified.net`; the bundle endpoint also returned HTTP 403 in a connectivity check. Three compilation attempts failed before TeX processing. No separate PDF was compiled and no other editor tab was opened. The current source remains in the original editor. PDF compilation, whole-document visual inspection, author scientific review, and the final Zenodo publication remain pending. The source-only package is explicitly marked incomplete.
