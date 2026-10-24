@@ -1,0 +1,115 @@
+# MGTOW comparison run (Phase 8). Derived from default.yaml: MGTOW is the target; comments only
+# (the MGTOW submissions stream stopped at 2015-11, see DEVIATIONS D1). Only the 90-day follow-up
+# is used so the 180-day embargo does not empty validation (DEVIATIONS D2). Reported separately.
+# Split fractions 0.5/0.3/0.2: MGTOW entrants are dense late in the observed window, so the default
+# 0.15 validation slice is narrower than the label+embargo span (DEVIATIONS D2).
+paths:
+  raw: data/raw
+  interim: data/interim
+  processed: data/processed_mgtow
+  reports: reports/mgtow
+target_subreddits:
+- MGTOW
+control_subreddits:
+- IncelTears
+gateway_subreddits:
+- ForeverAlone
+- lonely
+- socialanxiety
+- dating_advice
+- short
+- Tinder
+feature_window:
+  first_n: 5
+  days: 14
+pre_entry_days: 180
+followup_days: 90
+deep_min_contributions: 20
+deep_min_active_weeks: 4
+robustness:
+  min_contributions:
+  - 10
+  - 20
+  - 50
+  min_active_weeks:
+  - 3
+  - 4
+  - 8
+  followup_days:
+  - 90
+  comments_only: true
+coverage_overrides:
+  MGTOW:
+    end_utc: 1513037602
+coverage:
+  near_start_days: 30
+sensitivity:
+  exclude_near_coverage_start: true
+split:
+  train: 0.5
+  val: 0.3
+  test: 0.2
+seed: 42
+ingest:
+  batch_size: 20000
+  restrict_to_config_subreddits: true
+  extra_subreddits: []
+clean:
+  bot_name_suffixes:
+  - bot
+  extra_bot_names:
+  - AutoModerator
+  - BotDefense
+  - RemindMeBot
+  deleted_values:
+  - '[deleted]'
+  - '[removed]'
+  bot_author_warn_fraction: 0.01
+eda:
+  top_n_subreddits: 10
+download:
+  torrent_url: https://academictorrents.com/download/56aa49f9653ba545f48df2e33679f014d2829c10.torrent
+  torrent_magnet: magnet:?xt=urn:btih:56aa49f9653ba545f48df2e33679f014d2829c10
+  arctic_shift_base_url: https://arctic-shift.photon-reddit.com
+  user_agent: radpath/0.1 (academic research; aggregate analysis)
+  torrent_dir: data/raw/_torrent
+  checkpoint_dir: data/raw/_checkpoints
+  manifest: data/raw/download_manifest.json
+  log_path: reports/download.log
+  api_limit: auto
+  api_window_days: 30
+  api_min_interval_seconds: 1.0
+  api_max_retries: 5
+  api_backoff_seconds: 2.0
+  api_timeout_seconds: 60
+  torrent_metadata_timeout_seconds: 600
+  min_free_gb: 5
+models:
+  seed: 42
+  bootstrap_n: 1000
+  ece_bins: 10
+  leakage_auroc_flag: 0.95
+  lr_c_grid:
+  - 0.01
+  - 0.1
+  - 1.0
+  - 10.0
+  lgbm_grid:
+  - num_leaves: 7
+    n_estimators: 100
+    learning_rate: 0.05
+  - num_leaves: 15
+    n_estimators: 200
+    learning_rate: 0.05
+  lgbm_common:
+    min_child_samples: 20
+    subsample: 0.8
+    subsample_freq: 1
+    colsample_bytree: 0.8
+  tfidf:
+    max_features: 20000
+    min_df: 3
+    ngram_range:
+    - 1
+    - 2
+    sublinear_tf: true

@@ -36,3 +36,15 @@
 | tinder_submissions | 28,382 | no | 2015-02-12 |
 
 **Coverage overrides (part of D1).** Because comment streams are incomplete while submission streams are complete, `configs/default.yaml` pins `coverage_overrides` end times for Braincels (2018-09-19) and IncelsWithoutHate (2020-09-17) to the last observed comment. Follow-up windows ending after those dates get null labels.
+
+## D2 (2026-10-24): MGTOW contrast split among label-eligible users
+
+**What changed.** In the Phase 8 MGTOW contrast only, the temporal split (same fractions and embargo rule) is computed over users whose primary Task A label is observable (`eligible_a`), instead of over all entrants.
+
+**Reason.** The MGTOW comment stream ends 2017-12-12 (D1) while most entrants arrive later; the standard split left validation and test with no labelled users (first attempt failed before any model was scored or logged).
+
+**Effect.** Applies only to the separately reported MGTOW contrast; the primary analysis and all other robustness analyses are unchanged. MGTOW is comment-only and covers 2012 to Dec 2017.
+
+**D2 addendum.** Even with the eligible-only split, the 180-day embargo from the robustness grid emptied validation, so `configs/mgtow.yaml` restricts the grid to 90-day follow-up (embargo 90 days). The primary label (90-day) is unchanged.
+
+**D2 addendum 2.** Entrants within the observable MGTOW period are dense late in 2017, so a 15% validation slice (83 days) is narrower than the 90-day label window plus embargo and was fully embargoed. `configs/mgtow.yaml` therefore uses split fractions 0.5/0.3/0.2 for this contrast only.

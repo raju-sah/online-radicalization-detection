@@ -17,7 +17,7 @@ are in `PREREGISTRATION.md`.
 | 5. Real-data baselines | done | Task A solid; Task B too small to interpret (test n=13). Tag `phase-5`. |
 | 6. Sentence embeddings | done | MiniLM on CPU in ~40 min. Tag `phase-6`. |
 | 7. Vocabulary ablation | pending | Depends on Phase 5. |
-| 8. Robustness + sensitivity | pending | Depends on Phase 5. |
+| 8. Robustness + sensitivity | done | 20 analyses + MGTOW contrast (D2). Tag `phase-8`. |
 | 9. Interpretation | pending | Depends on Phase 5. |
 | 10. Paper draft | pending | Depends on Phases 5-9; then STOP at Gate 2. |
 
@@ -198,3 +198,10 @@ Task A (train 28,947 @6.6% pos; test 10,324 @8.4% pos, 870 positives):
 | 1000 | 0.691 | 0.837 |
 
 - Reading: no measurable drop, so the (weak) text signal is not carried by the most community-specific vocabulary. Limitation: the contrast corpus is IncelTears submissions only (D1: no IncelTears comments), while target text is mostly comments, so the ranking partly captures submission-vs-comment register; the null result should be read with that in mind.
+
+## Phase 8 record (done, 2026-10-24)
+
+- `scripts/run_robustness.py`: all 18 threshold x follow-up variants, the comments-only variant, and the primary label excluding near_coverage_start users, each tested once (tag `robust` / `excl_near_start`, three models: activity LR, behavioural LightGBM, combined LR). Summary `reports/results/real/robustness_summary.csv` and forest plot `robustness_forest.png`.
+- Behavioural LightGBM across the 20 analyses: AUROC 0.774 (c10_w4_f180) to 0.858 (c50_w3_f90); AUPRC 0.149 to 0.408 (AUPRC tracks prevalence). Primary 0.836; comments-only 0.838; excluding near-coverage-start 0.835. 180-day variants are lower and use fewer users (test n=5,889) because of coverage truncation. No leakage flag.
+- Task B robustness was not extended: only 450 / 13 train/test users (D1).
+- MGTOW contrast (`scripts/run_mgtow_contrast.py`, `configs/mgtow.yaml`, dataset `real_mgtow`, reported separately): comments only, entrants to 2017-09; needed DEVIATIONS D2 (eligible-only split, 90-day grid, 0.5/0.3/0.2 fractions). Test n=4,833, 592 positives (12.2%): activity LR AUROC 0.842, behavioural LightGBM 0.875 (AUPRC 0.486), TF-IDF LR 0.760, combined 0.879 (AUPRC 0.512). Not comparable to the incels runs (different era, splits, and positives rate); only the qualitative pattern (behaviour >> text) matches.
