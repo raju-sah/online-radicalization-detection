@@ -184,3 +184,17 @@ Task A (train 28,947 @6.6% pos; test 10,324 @8.4% pos, 870 positives):
 - all-MiniLM-L6-v2 on CPU (torch 2.14 CPU, max_seq_length 128), 109,369 feature-window texts for 43,202 labelled Task A users, ~40 min, cached resumably as 22 chunks in `data/processed/embeddings` (gitignored). `scripts/run_embeddings.py`, `models.evaluate_dense`.
 - Task A test (n=10,324, 870 positives): embedding LR AUROC 0.570 / AUPRC 0.091; embedding LightGBM AUROC 0.812 / AUPRC 0.253 / F1 0.324. Both below the best behavioural model (0.836 / 0.318) and no leakage flag.
 - Reading: pooled semantic vectors add nothing beyond behaviour. LR at 0.57 is below TF-IDF LR (0.69); LightGBM likely recovers volume/no-text information from the vectors (users without text get zero vectors), which LR cannot. Not tuned further.
+
+## Phase 7 record (done, 2026-10-24)
+
+- Weighted log-odds (informative Dirichlet prior, Monroe et al. 2008), target = train-split Task A feature-window text (28,947 user docs) vs IncelTears texts (8,608, submissions only, created <= last train entry). No hand-written term list. Ranking in `data/processed/vocab_ranking.csv` (local, gitignored; not reported).
+- Text models retrained with top-k terms removed (test, once per config; `reports/results/real/vocab_ablation_summary.csv`):
+
+| k removed | TF-IDF LR AUROC | combined LR AUROC |
+|---|---|---|
+| 0 (Phase 5) | 0.689 | 0.837 |
+| 50 | 0.686 | 0.837 |
+| 200 | 0.684 | 0.837 |
+| 1000 | 0.691 | 0.837 |
+
+- Reading: no measurable drop, so the (weak) text signal is not carried by the most community-specific vocabulary. Limitation: the contrast corpus is IncelTears submissions only (D1: no IncelTears comments), while target text is mostly comments, so the ranking partly captures submission-vs-comment register; the null result should be read with that in mind.
