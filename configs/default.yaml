@@ -81,9 +81,14 @@ sensitivity:
 # date always share a split, and label windows crossing a boundary are
 # embargoed.
 split:
-  train: 0.70
-  val: 0.15
-  test: 0.15
+  train: 0.50
+  val: 0.25
+  test: 0.25
+# D4 (DEVIATIONS.md): split among users whose primary Task A label is observable,
+# embargoing by the primary 90-day label window. Round 2 only.
+split_options:
+  eligible_only: true
+  embargo_followup_days: 90
 
 seed: 42
 

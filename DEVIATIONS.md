@@ -56,3 +56,11 @@
 **Reason.** After the Phase 9 interpretation, the entry-year breakdown showed that all validation (from 2018-09-19) and test (2019-08 to 2020-06) entrants fall after the last date Braincels comments are observed (2018-09-19, D1), while Braincels was still active until its submissions end 2019-08-31. Entry times and labels there are mis-measured (spurious entries via IncelsWithoutHate; unobserved Braincels follow-up biases labels to negative). The user chose the restriction on 2026-10-24.
 
 **Disclosure.** This was decided after round-1 test results were seen, for a data-validity reason (not to improve scores). Round-1 results are kept in `reports/results/real_r1_superseded/` (dataset tag `real` in `reports/test_log.csv`), clearly labelled superseded; round-2 test evaluations are logged separately under `real_r2`. Round-2 hyperparameters and procedures are unchanged from round 1.
+
+## D4 (2026-10-24): round-2 split rule
+
+**What changed.** Round 2 uses split fractions 0.50/0.25/0.25 (was 0.70/0.15/0.15), computed over users whose primary Task A label is observable (`eligible_a`) instead of over all entrants, with the label embargo based on the primary 90-day window (was the longest robustness window, 180 days). Config keys `split` and `split_options` in `configs/default.yaml`. Users and ordering rules are otherwise unchanged: user-level, temporal (train earliest, test latest), one split per user, embargo on label windows crossing a boundary.
+
+**Reason.** After D3, the standard split left validation and test empty (Gate 1 failed mechanically): entrants concentrate in 2018 while labels are only observable to about 2018-06. User decision 2026-10-24.
+
+**Consequences.** 180-day robustness variants share splits embargoed by 90 days, so some of their label windows extend past the embargo; those variants are approximate. Task B users inherit the Task A split and so only exist if they are also Task A eligible. Round-1 results (old split) are retained as superseded.

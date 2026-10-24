@@ -146,3 +146,29 @@ def test_split_summary_reports_class_balance() -> None:
     assert summary["n_users"].sum() == 100
     total_positive = summary["label_deep_a_n_positive"].sum()
     assert total_positive == int(result["label_deep_a"].sum())
+
+
+def test_eligible_only_split_with_short_embargo(params, make_contributions):
+    from dataclasses import replace
+
+    from radpath.cohort import build_cohort
+
+    day = 86_400
+    rows = []
+    for i in range(60):
+        t0 = 1_600_000_000 + i * 20 * day
+        rows.append({"author_hash": f"u{i}", "subreddit": "incels", "created_utc": t0})
+        rows.append({"author_hash": f"u{i}", "subreddit": "incels", "created_utc": t0 + 2 * day})
+    p = replace(params, split_eligible_only=True, embargo_followup_days=90)
+    cohort = build_cohort(
+        make_contributions(rows), p, ["incels"], ["lonely"],
+        split_fractions={"train": 0.5, "val": 0.25, "test": 0.25},
+        data_end_utc=1_600_000_000 + 40 * 20 * day,
+    )
+    labelled = cohort.filter(pl.col("split").is_not_null())
+    assert set(labelled["split"].unique()) == {"train", "val", "test"}
+    assert labelled["eligible_a"].all()
+    # temporal ordering of splits
+    hi = labelled.group_by("split").agg(pl.col("t0").max().alias("hi"), pl.col("t0").min().alias("lo"))
+    d = {r["split"]: r for r in hi.iter_rows(named=True)}
+    assert d["train"]["hi"] < d["val"]["lo"] <= d["val"]["hi"] < d["test"]["lo"]

@@ -71,6 +71,8 @@ class CohortParams:
     deep_min_active_weeks: int
     near_coverage_start_days: int = 30
     max_entry_utc: int | None = None
+    split_eligible_only: bool = False
+    embargo_followup_days: int | None = None
     label_variants: tuple[LabelVariant, ...] = ()
 
     @classmethod
@@ -123,6 +125,14 @@ class CohortParams:
             deep_min_active_weeks=min_weeks,
             near_coverage_start_days=int(
                 (cfg.get("coverage", {}) or {}).get("near_start_days", 30)
+            ),
+            split_eligible_only=bool(
+                (cfg.get("split_options", {}) or {}).get("eligible_only", False)
+            ),
+            embargo_followup_days=(
+                int(cfg["split_options"]["embargo_followup_days"])
+                if (cfg.get("split_options", {}) or {}).get("embargo_followup_days")
+                else None
             ),
             max_entry_utc=(
                 parse_utc(cfg["entry_cutoff_utc"])
@@ -480,11 +490,23 @@ def build_cohort(
     if split_fractions is not None:
         from radpath.split import temporal_split
 
-        users = temporal_split(
-            users,
-            split_fractions,
-            label_end_col="label_window_end",
+        embargo_days = params.embargo_followup_days or params.max_followup_days
+        users = users.with_columns(
+            (pl.col("cutoff_a") + embargo_days * SECONDS_PER_DAY).alias("_embargo_end")
         )
+        if params.split_eligible_only:
+            # D4: split among users whose primary Task A label is observable.
+            eligible = temporal_split(
+                users.filter(pl.col("eligible_a")),
+                split_fractions,
+                label_end_col="_embargo_end",
+            ).select("author_hash", "split")
+            users = users.join(eligible, on="author_hash", how="left")
+        else:
+            users = temporal_split(
+                users, split_fractions, label_end_col="_embargo_end"
+            )
+        users = users.drop("_embargo_end").sort("author_hash")
 
     return users
 
