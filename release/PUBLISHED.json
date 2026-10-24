@@ -4,15 +4,33 @@
   "concept_doi": "10.5281/zenodo.23621538",
   "version": "0.1.0",
   "publication_date": "2026-10-24",
-  "status": "published-source-only",
-  "pdf_included": false,
-  "pdf_compilation_verified": false,
+  "status": "published-with-pdf",
+  "pdf_included": true,
+  "pdf_compilation_verified": true,
   "published_files": [
+    "main.pdf",
+    "main.tex",
     "radpath-code-0.1.0.zip",
     "radpath-manuscript-source-0.1.0.zip",
     "PUBLICATION-NOTES.txt",
     "manifest.json",
     "SHA256SUMS",
     "zenodo-metadata.json"
-  ]
+  ],
+  "pdf_layout_verified": true,
+  "pdf_pages": 6,
+  "default_preview": "main.pdf",
+  "correction_date": "2026-10-24",
+  "correction": "Missing PDF added, reference URLs wrapped with xurl, findings unchanged. Original source and code ZIP bytes preserved.",
+  "evidence_screenshot": "output/release/zenodo-pdf-published.jpg",
+  "published_file_checksums": {
+    "main.pdf": "795a5b2f4976f568f62240164d16bb2a",
+    "main.tex": "8392b980cf02d29e7b54580cc85395d5",
+    "radpath-code-0.1.0.zip": "46c5a7aed09bf9207272b104962001cf",
+    "radpath-manuscript-source-0.1.0.zip": "e4356e7848210cb0caf4a918b8a9f928",
+    "PUBLICATION-NOTES.txt": "2e4492f16c49c0fc21334f9b6c9f30b2",
+    "manifest.json": "7720b03209d35e2a03eb70d910f41ba9",
+    "SHA256SUMS": "463b4e23e8793eab7bdad033e5eb9f30",
+    "zenodo-metadata.json": "934b0ea7b23eccf402d3a1a67d488086"
+  }
 }

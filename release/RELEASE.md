@@ -55,3 +55,19 @@ actual assigned identifiers. No DOI is invented or prefilled here.
 
 This task prepares a reviewable local package. Publication follows the author's
 review of the actual files and saved Zenodo preview.
+
+## Published PDF correction on 2026-10-24
+
+The public record at https://zenodo.org/records/23621539 now includes `main.pdf`
+as the default preview. The author supplied the compiled six-page PDF after the
+initial source-only deposit. Every page was visually checked, including the
+reference URL wrapping, all four tables and both figures. No findings changed.
+The built-in compiler bundle remains unavailable; the supplied PDF was inspected
+directly rather than compiled again.
+
+The original code and source ZIP archives retain their published bytes. The
+standalone `main.tex` adds `xurl`; replace `paper/main.tex` from the source archive
+with this file to use the reference formatting fix. Updated publication notes,
+metadata, the manifest and checksums describe the eight-file corrected record.
+The DOI remains `10.5281/zenodo.23621539`. The study remains exploratory and
+requires independent replication.

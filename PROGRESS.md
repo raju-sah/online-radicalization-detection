@@ -278,3 +278,10 @@ Caveats to carry into the paper: incels data effectively start 2016-07 (entry le
 - Six files were published. All six displayed MD5 checksums match the audited local files. No raw or user-level research data were uploaded. Supporting code is MIT, manuscript CC BY 4.0, author Raju Sah, Independent researcher, ORCID 0009-0006-0412-6139.
 - Published archive bytes are preserved. Local citation/readme updates after publication are bookkeeping for future versions, not edits to the published zip archives. PDF compilation and full visual review remain unfinished despite source publication.
 - Publication evidence screenshot is local at output/release/zenodo-published.jpg.
+
+## Zenodo PDF correction (2026-10-24)
+
+- Added the author-supplied six-page `main.pdf` to the existing public record and selected it as the default preview. Inspected all six rendered pages, four tables, both figures and reference URL wrapping. The standalone `main.tex` contains the author's `xurl` formatting fix. No scientific results changed.
+- Updated the public description, PUBLICATION-NOTES.txt, manifest, checksums and metadata. Retained the original source and code ZIP bytes. Historical source-only text inside those archives is superseded by the current publication notes.
+- Published the correction at https://zenodo.org/records/23621539 with the same version DOI 10.5281/zenodo.23621539. Verified the public URL without preview status, all eight displayed MD5 checksums, and the working six-page PDF viewer.
+- Evidence screenshot: output/release/zenodo-pdf-published.jpg. Updated README.md, .zenodo.json and release/PUBLISHED.json to match the public record. The original local LaTeX editor remains open. No raw data, user-level outputs or secrets were uploaded.
