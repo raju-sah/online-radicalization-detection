@@ -254,3 +254,7 @@ Caveats to carry into the paper: incels data effectively start 2016-07 (entry le
   4. Task B is not estimable (142 test users); the 180-day sensitivity variants are not estimable.
   5. Calibration: class-weighted models have ECE 0.2-0.4; no post-hoc calibration (not preregistered).
 - Reports/test_log.csv holds every test evaluation (rounds `real`, `real_r2`, `real_mgtow`); max AUROC in any is below 0.95.
+
+## Gate 2 decision (2026-10-24)
+
+- User accepted the recommendation for the vocabulary ablation: keep the round-1 result as indicative only and disclose that the round-2 contrast corpus is empty (current paper text). No new ablation run, no new deviation. Remaining before submission: build the PDF with the official ACL style, fill citation/ethics TODOs.
