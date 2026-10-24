@@ -147,3 +147,8 @@ synthetic fixtures only; it must not read real data or write to
 ## Recovery #2 (2026-10-23 20:41 local)
 
 - API recovered after ~1.5 h; resumed with the same command, PID 4044957, disk guard reattached.
+
+## Session restart (2026-10-24 07:45 local)
+
+- The download died silently at 21:15 on 10-23 when the previous Claude session ended (no API error). Restarted as a systemd user unit (`radpath-download`, PID 17646) so it survives session restarts; disk guard is unit `radpath-diskguard`. Status/stop: `systemctl --user status radpath-download`.
+- Checkpoints: incels (both), braincels/incelswithouthate submissions complete; comments: braincels 1.74M (to 2018-09-13), mgtow 1.22M (2017-11-28), incelswithouthate 0.81M (2020-09-03). 4 of 22 complete. Free disk 23 GiB.
