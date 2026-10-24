@@ -133,7 +133,8 @@ def _lgbm(params: Mapping[str, Any], common: Mapping[str, Any], seed: int, pos_w
 
 
 def fit_predict_all(
-    train: Data, val: Data, test: Data, cfg: Mapping[str, Any], count_idx: list[int]
+    train: Data, val: Data, test: Data, cfg: Mapping[str, Any], count_idx: list[int],
+    only: tuple[str, ...] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Fit every model (tuning on val only) and return val/test probabilities.
 
@@ -167,7 +168,8 @@ def fit_predict_all(
         for C in mc["lr_c_grid"]:
             m = _fit_lr(scaler.transform(train.X[:, count_idx]), train.y, C, seed)
             yield {"C": C}, (lambda s, m=m: m.predict_proba(scaler.transform(sets[s].X[:, count_idx]))[:, 1])
-    out["activity_lr"] = pick(act_cands())
+    if only is None or "activity_lr" in only:
+        out["activity_lr"] = pick(act_cands())
 
     # behavioural LightGBM
     pos_w = float((1 - prior) / max(prior, 1e-9))
@@ -175,7 +177,8 @@ def fit_predict_all(
         for g in mc["lgbm_grid"]:
             m = _lgbm(g, mc["lgbm_common"], seed, pos_w).fit(train.X, train.y)
             yield dict(g), (lambda s, m=m: m.predict_proba(sets[s].X)[:, 1])
-    out["behaviour_lgbm"] = pick(lgb_cands())
+    if only is None or "behaviour_lgbm" in only:
+        out["behaviour_lgbm"] = pick(lgb_cands())
 
     # TF-IDF fit on train only
     tf = dict(mc["tfidf"]); tf["ngram_range"] = tuple(tf["ngram_range"])
@@ -241,6 +244,8 @@ def evaluate_task(
     dataset: str,
     exclude_cols: tuple[str, ...] = (),
     allow_repeat: bool = False,
+    only: tuple[str, ...] | None = None,
+    tag: str = "",
 ) -> pl.DataFrame:
     """Run all models for one task/label and write aggregate results.
 
@@ -256,6 +261,8 @@ def evaluate_task(
         dataset: ``"real"`` or ``"synthetic"``-style tag recorded in the log.
         exclude_cols: Feature columns to drop (ablations).
         allow_repeat: Permit repeated test evaluation (synthetic only).
+        only: Restrict to these model names (majority is always included).
+        tag: Label for ablations; part of the config hash and output names.
 
     Returns:
         One row per model with test metrics, CIs, threshold and class balance.
@@ -282,16 +289,18 @@ def evaluate_task(
             raise ValueError(f"Split {name} has a degenerate label distribution ({len(d.y)} users).")
 
     mc = cfg["models"]
-    preds = fit_predict_all(train, val, test, cfg, count_idx)
+    preds = fit_predict_all(train, val, test, cfg, count_idx, only)
     rows, rel = [], []
     for model in MODEL_NAMES:
+        if model not in preds:
+            continue
         p = preds[model]
         thr = best_f1_threshold(val.y, p["val"])
         m = metrics(test.y, p["test"], thr, mc["ece_bins"])
         ci = bootstrap_ci(test.y, p["test"], thr, int(mc["bootstrap_n"]), int(mc["seed"]), mc["ece_bins"])
-        chash = config_hash({"model": model, **p["config"], "excl": sorted(exclude_cols)})
+        chash = config_hash({"model": model, **p["config"], "excl": sorted(exclude_cols), "tag": tag})
         row = {
-            "dataset": dataset, "task": task, "label": label_col, "model": model,
+            "dataset": dataset, "task": task, "label": label_col, "model": model, "tag": tag,
             "config": json.dumps(p["config"]), "config_hash": chash, "threshold": thr,
             "n_train": len(train.y), "n_val": len(val.y), "n_test": len(test.y),
             "pos_rate_train": float(train.y.mean()), "pos_rate_val": float(val.y.mean()),
@@ -314,7 +323,7 @@ def evaluate_task(
         rel.append(rt)
     results_dir.mkdir(parents=True, exist_ok=True)
     out = pl.DataFrame(rows)
-    tag = f"{dataset}_{task}_{label_col}" + (f"_excl{len(exclude_cols)}" if exclude_cols else "")
+    tag = f"{dataset}_{task}_{label_col}" + (f"_excl{len(exclude_cols)}" if exclude_cols else "") + (f"_{tag}" if tag else "")
     out.write_csv(results_dir / f"metrics_{tag}.csv")
     pl.concat(rel).write_csv(results_dir / f"reliability_{tag}.csv")
     _reliability_plot(pl.concat(rel), results_dir / f"reliability_{tag}.png", tag)
@@ -340,3 +349,67 @@ def _reliability_plot(rel: pl.DataFrame, path: Path, title: str) -> None:
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
+
+
+def evaluate_dense(
+    emb: pl.DataFrame,
+    cohort: pl.DataFrame,
+    label_col: str,
+    cfg: Mapping[str, Any],
+    results_dir: Path,
+    test_log: Path,
+    dataset: str,
+    tag: str,
+    allow_repeat: bool = False,
+) -> pl.DataFrame:
+    """Evaluate logistic regression and LightGBM on dense per-user vectors.
+
+    Same protocol as :func:`evaluate_task`: tune on validation AUPRC, choose
+    the F1 threshold on validation, score the test split once and log it.
+    """
+    mc = cfg["models"]
+    seed = int(mc["seed"])
+    frame = cohort.filter(
+        pl.col(label_col).is_not_null() & pl.col("split").is_in(["train", "val", "test"])
+    ).select("author_hash", "split", pl.col(label_col).cast(pl.Int64).alias("_y")).join(
+        emb, on="author_hash"
+    )
+    cols = [c for c in emb.columns if c != "author_hash"]
+
+    def mk(split: str):
+        f = frame.filter(pl.col("split") == split)
+        return f.select(cols).to_numpy().astype(float), f["_y"].to_numpy()
+
+    (Xtr, ytr), (Xva, yva), (Xte, yte) = mk("train"), mk("val"), mk("test")
+    prior = float(ytr.mean())
+    scaler = StandardScaler().fit(Xtr)
+    cands: dict[str, list[tuple[dict, Any]]] = {"embedding_lr": [], "embedding_lgbm": []}
+    for C in mc["lr_c_grid"]:
+        m = _fit_lr(scaler.transform(Xtr), ytr, C, seed)
+        cands["embedding_lr"].append(({"C": C}, lambda X, m=m: m.predict_proba(scaler.transform(X))[:, 1]))
+    for g in mc["lgbm_grid"]:
+        m = _lgbm(g, mc["lgbm_common"], seed, (1 - prior) / max(prior, 1e-9)).fit(Xtr, ytr)
+        cands["embedding_lgbm"].append((dict(g), lambda X, m=m: m.predict_proba(X)[:, 1]))
+    rows = []
+    for model, options in cands.items():
+        conf, predict = max(options, key=lambda o: _safe_ap(yva, o[1](Xva)))
+        pv, pt = predict(Xva), predict(Xte)
+        thr = best_f1_threshold(yva, pv)
+        m = metrics(yte, pt, thr, mc["ece_bins"])
+        ci = bootstrap_ci(yte, pt, thr, int(mc["bootstrap_n"]), seed, mc["ece_bins"])
+        row = {"dataset": dataset, "task": "a", "label": label_col, "model": f"{model}_{tag}",
+               "config": json.dumps(conf), "config_hash": config_hash({"model": model, "tag": tag, **conf}),
+               "threshold": thr, "n_train": len(ytr), "n_val": len(yva), "n_test": len(yte),
+               "pos_rate_train": float(ytr.mean()), "pos_rate_val": float(yva.mean()),
+               "pos_rate_test": float(yte.mean()), "pos_test": int(yte.sum()), **m}
+        for k, (lo, hi) in ci.items():
+            row[f"{k}_lo"], row[f"{k}_hi"] = lo, hi
+        row["leakage_flag"] = bool(m["auroc"] > float(mc["leakage_auroc_flag"]))
+        rows.append(row)
+        log_test_evaluation(
+            test_log, {**row, "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds")}, allow_repeat
+        )
+    results_dir.mkdir(parents=True, exist_ok=True)
+    out = pl.DataFrame(rows)
+    out.write_csv(results_dir / f"metrics_{dataset}_a_{label_col}_{tag}.csv")
+    return out

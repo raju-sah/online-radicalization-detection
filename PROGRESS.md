@@ -15,7 +15,7 @@ are in `PREREGISTRATION.md`.
 | 3. Synthetic features + baselines | done | `features.py`, `models.py`, `scripts/run_models.py`; verified on a 4,000-user synthetic fixture. Tag `phase-3`. |
 | 4. Full real-data run | done | Run on frozen snapshot (DEVIATIONS D1). Gate 1 PASS. Tag `phase-4`. |
 | 5. Real-data baselines | done | Task A solid; Task B too small to interpret (test n=13). Tag `phase-5`. |
-| 6. Sentence embeddings | pending | Depends on Phase 5. |
+| 6. Sentence embeddings | done | MiniLM on CPU in ~40 min. Tag `phase-6`. |
 | 7. Vocabulary ablation | pending | Depends on Phase 5. |
 | 8. Robustness + sensitivity | pending | Depends on Phase 5. |
 | 9. Interpretation | pending | Depends on Phase 5. |
@@ -178,3 +178,9 @@ Task A (train 28,947 @6.6% pos; test 10,324 @8.4% pos, 870 positives):
 - Class-weighted models are badly calibrated in absolute terms (ECE ~0.26-0.39) since weights inflate probabilities; ranking metrics are the meaningful ones. Post-hoc calibration was not preregistered; will not tune on test.
 - Task B: only 450 train / 13 test users (1 test positive); numbers are uninterpretable and must be reported as such (caused by D1: gateway streams missing).
 - Notable: activity-count alone gives AUROC 0.81, so early volume carries most of the signal; text adds little over behaviour.
+
+## Phase 6 record (done, 2026-10-24)
+
+- all-MiniLM-L6-v2 on CPU (torch 2.14 CPU, max_seq_length 128), 109,369 feature-window texts for 43,202 labelled Task A users, ~40 min, cached resumably as 22 chunks in `data/processed/embeddings` (gitignored). `scripts/run_embeddings.py`, `models.evaluate_dense`.
+- Task A test (n=10,324, 870 positives): embedding LR AUROC 0.570 / AUPRC 0.091; embedding LightGBM AUROC 0.812 / AUPRC 0.253 / F1 0.324. Both below the best behavioural model (0.836 / 0.318) and no leakage flag.
+- Reading: pooled semantic vectors add nothing beyond behaviour. LR at 0.57 is below TF-IDF LR (0.69); LightGBM likely recovers volume/no-text information from the vectors (users without text get zero vectors), which LR cannot. Not tuned further.
