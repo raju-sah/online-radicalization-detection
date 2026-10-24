@@ -229,3 +229,16 @@ Options (user decision):
   - 0.5/0.25/0.25, embargo by primary 90-day windows only: train 16,002/980, val 3,093/294, test 11,616/1,201 (test = 2018-H1 entrants).
   - 0.5/0.25/0.25, embargo by 180-day windows: train 9,507/634, val 1,569/113, test 11,616/1,201.
 - Needs a user decision (splitting rule is part of the preregistration); nothing else has been run in round 2.
+
+## Round 2 record (complete, 2026-10-24) — supersedes the Phase 5-9 numbers above
+
+Decisions: D3 (entrants <= 2018-09-19), D4 (eligible-only 0.50/0.25/0.25 split, 90-day embargo), D5 (near-start flag anchored at 2016-07-01). Dataset tag `real_r2`; results in `reports/results/real_r2/`; round-1 in `reports/results/real_r1_superseded/`; all test evaluations in `reports/test_log.csv` (71 real_r2 rows; none with AUROC > 0.95).
+
+Cohort 76,512; Task A eligible 46,726 (3,677 deep, 7.9%). Gate 1 PASS: train 16,002 / 980 pos (6.1%), val 3,093 / 294 (9.5%), test 11,616 / 1,201 (10.3%). Entrants span 2016-07 to 2018-09 (incels data start 2016-07; train = 2016-2017 incels-era, val 2017-2018, test 2018).
+
+Task A test (AUROC [95% CI] / AUPRC / F1): majority 0.500 / 0.103 / 0.187; activity-count LR 0.788 [0.778,0.798] / 0.231 / 0.379; behavioural LightGBM 0.815 [0.802,0.826] / 0.289 / 0.400; TF-IDF LR 0.696 [0.682,0.711] / 0.197 / 0.246; combined LR 0.834 [0.823,0.846] / 0.331 / 0.435; MiniLM+LightGBM 0.796 [0.785,0.807] / 0.273 / 0.348; MiniLM+LR 0.550 / 0.106 / 0.201. Task B: 142 test users (17 positives), AUROC 0.53-0.61, intervals include 0.5; uninterpretable.
+Vocabulary ablation (top 50/200/1000 terms removed): TF-IDF LR 0.696/0.697/0.697, combined 0.834 throughout; no drop. Same IncelTears-submissions-only caveat as round 1 (contrast text count differs only by cohort).
+Robustness (behavioural LightGBM, 11 analyses): AUROC 0.802 to 0.840 across 9 threshold variants with 90-day follow-up; comments-only 0.818; excluding near-start users (v2 flag, 893 flagged) 0.831. Nine 180-day variants are NOT ESTIMABLE (windows run past observed coverage given the entry cutoff; test split empty) — see `robustness_not_estimable.txt`.
+Interpretation: permutation importance (validation, AUPRC drop): contributions in the window `a_n` 0.102, distinct threads 0.044, mean inter-event gap 0.028, reply-to-comment share 0.021, time-to-Nth 0.019; text features ~0. Test set is entirely 2018 entrants (post r/incels ban) so there is no within-test era contrast; the validation set spans 2017 (AUROC 0.80) and 2018 (n=137, AUROC 0.71).
+MGTOW contrast (Phase 8, `real_mgtow`) was not rerun: it uses its own cohort/config (D2) and does not depend on the incels/Braincels cohort rules; behavioural LightGBM AUROC 0.875 there.
+Caveats to carry into the paper: incels data effectively start 2016-07 (entry left-censored for early users); Braincels/IWH comments partial; Task B and IncelTears ablation are weak (D1); class-weighted models are miscalibrated (ECE ~0.2-0.4) and no post-hoc calibration was preregistered; early volume (`a_n`) dominates, so the 'early signal' is largely how quickly a user posts.

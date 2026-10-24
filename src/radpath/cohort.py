@@ -70,6 +70,7 @@ class CohortParams:
     deep_min_contributions: int
     deep_min_active_weeks: int
     near_coverage_start_days: int = 30
+    near_start_anchor_utc: int | None = None
     max_entry_utc: int | None = None
     split_eligible_only: bool = False
     embargo_followup_days: int | None = None
@@ -132,6 +133,11 @@ class CohortParams:
             embargo_followup_days=(
                 int(cfg["split_options"]["embargo_followup_days"])
                 if (cfg.get("split_options", {}) or {}).get("embargo_followup_days")
+                else None
+            ),
+            near_start_anchor_utc=(
+                parse_utc((cfg.get("coverage", {}) or {})["near_start_anchor_utc"])
+                if (cfg.get("coverage", {}) or {}).get("near_start_anchor_utc")
                 else None
             ),
             max_entry_utc=(
@@ -452,7 +458,9 @@ def build_cohort(
     users = users.with_columns(aliases)
 
     earliest_target_start = (
-        min((start for start, _ in ranges.values()), default=None)
+        params.near_start_anchor_utc
+        if params.near_start_anchor_utc is not None
+        else min((start for start, _ in ranges.values()), default=None)
     )
     if earliest_target_start is None:
         users = users.with_columns(pl.lit(False).alias("near_coverage_start"))

@@ -65,15 +65,27 @@ def main(argv: list[str] | None = None) -> None:
     results = paths["reports"] / "results" / args.dataset
     primary = f"label_deep_a_{params.primary_variant.name}"
     outs = []
+    skipped: list[str] = []
     for col in labels:
         if col == primary:
             continue  # primary already evaluated in Phase 5
-        o = evaluate_task(feats, texts, cohort, "a", col, cfg, results, paths["reports"] / "test_log.csv",
-                          args.dataset, only=MODELS, tag="robust")
-        outs.append(o.with_columns(pl.lit(col.replace("label_deep_a_", "")).alias("analysis")))
+        name = col.replace("label_deep_a_", "")
+        done = results / f"metrics_{args.dataset}_a_{col}_robust.csv"
+        if done.exists():  # already scored once and logged; never re-score test
+            o = pl.read_csv(done)
+        else:
+            try:
+                o = evaluate_task(feats, texts, cohort, "a", col, cfg, results,
+                                  paths["reports"] / "test_log.csv", args.dataset,
+                                  only=MODELS, tag="robust")
+            except ValueError as exc:
+                print(f"NOT ESTIMABLE {name}: {exc}", flush=True)
+                skipped.append(name)
+                continue
+        outs.append(o.with_columns(pl.lit(name).alias("analysis")))
     near = cohort.filter(~pl.col("near_coverage_start"))
     o = evaluate_task(feats, texts, near, "a", primary, cfg, results, paths["reports"] / "test_log.csv",
-                      args.dataset, only=MODELS, tag="excl_near_start")
+                      args.dataset, only=MODELS, tag="excl_near_start_v2")
     outs.append(o.with_columns(pl.lit("primary_excl_near_coverage_start").alias("analysis")))
     base = pl.read_csv(results / f"metrics_{args.dataset}_a_{primary}.csv").filter(
         pl.col("model").is_in(("majority", *MODELS))
@@ -83,6 +95,7 @@ def main(argv: list[str] | None = None) -> None:
             "auroc", "auroc_lo", "auroc_hi", "auprc", "auprc_lo", "auprc_hi", "f1", "f1_lo", "f1_hi", "ece"]
     summary = summary.select(keep)
     summary.write_csv(results / "robustness_summary.csv")
+    (results / "robustness_not_estimable.txt").write_text("\n".join(skipped) + "\n")
     forest_plot(summary, results / "robustness_forest.png")
     print(summary.filter(pl.col("model") == "behaviour_lgbm").select("analysis", "n_test", "pos_test", "auroc", "auprc"))
 

@@ -64,3 +64,11 @@
 **Reason.** After D3, the standard split left validation and test empty (Gate 1 failed mechanically): entrants concentrate in 2018 while labels are only observable to about 2018-06. User decision 2026-10-24.
 
 **Consequences.** 180-day robustness variants share splits embargoed by 90 days, so some of their label windows extend past the embargo; those variants are approximate. Task B users inherit the Task A split and so only exist if they are also Task A eligible. Round-1 results (old split) are retained as superseded.
+
+## D5 (2026-10-24): anchor the near-coverage-start flag at 2016-07-01
+
+**What changed.** `coverage.near_start_anchor_utc: 2016-07-01` in `configs/default.yaml`; users entering within 30 days of that date are flagged `near_coverage_start` (the preregistered 30-day rule is unchanged).
+
+**Reason.** The flag was anchored at the earliest target record, 2014-01-04, but that is a handful of stray r/incels submissions: the incels data effectively begin in 2016-07 (905 users with t0 in 2016-07 versus about 15 before). The flag therefore marked only 1 user and the sensitivity analysis was ineffective at addressing left-censored entry times. This implements the preregistered intent; it changes only the flag column. Cohort membership, labels and splits are unchanged (checked).
+
+**Consequences.** The earlier `primary_excl_near_coverage_start` result (tag `excl_near_start`, AUROC 0.829) is superseded by the `excl_near_start_v2` result; both stay in `reports/test_log.csv`. The same left-censoring caveat applies to the Phase 5 to 9 round-1 results (superseded).

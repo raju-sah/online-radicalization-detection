@@ -73,6 +73,9 @@ coverage:
   # Users entering within this many days of the earliest target coverage are
   # flagged `near_coverage_start` and excluded from the sensitivity analysis.
   near_start_days: 30
+  # D5: the data effectively begin 2016-07 (earlier months hold a few stray
+  # records), so the flag is anchored here instead of the earliest record.
+  near_start_anchor_utc: "2016-07-01"
 sensitivity:
   exclude_near_coverage_start: true
 
