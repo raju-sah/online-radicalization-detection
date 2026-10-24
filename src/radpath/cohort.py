@@ -70,6 +70,7 @@ class CohortParams:
     deep_min_contributions: int
     deep_min_active_weeks: int
     near_coverage_start_days: int = 30
+    max_entry_utc: int | None = None
     label_variants: tuple[LabelVariant, ...] = ()
 
     @classmethod
@@ -122,6 +123,11 @@ class CohortParams:
             deep_min_active_weeks=min_weeks,
             near_coverage_start_days=int(
                 (cfg.get("coverage", {}) or {}).get("near_start_days", 30)
+            ),
+            max_entry_utc=(
+                parse_utc(cfg["entry_cutoff_utc"])
+                if cfg.get("entry_cutoff_utc") not in (None, "")
+                else None
             ),
             label_variants=tuple(variants),
         )
@@ -276,6 +282,13 @@ def build_cohort(
         pl.col("created_utc").min().alias("t0"),
         pl.len().alias("n_target_records_total"),
     ).join(entry, on="author_hash", how="left")
+
+    if params.max_entry_utc is not None:
+        # D3: users entering after the last date every target stream is fully
+        # observed have unreliable entry times and labels; drop them.
+        users = users.filter(pl.col("t0") <= params.max_entry_utc)
+        if users.height == 0:
+            return _empty_cohort(params, include_split=split_fractions is not None)
 
     nth = (
         core.with_columns(pl.col("id").cum_count().over("author_hash").alias("_rank"))

@@ -290,3 +290,17 @@ def test_config_generates_robustness_and_comments_only_variants() -> None:
     assert len(names) == 19  # 18 grid cells plus one comments-only variant
     comments = next(v for v in params.all_variants() if v.comments_only)
     assert comments.kinds == ("comment",)
+
+
+def test_max_entry_utc_drops_late_entrants(params, make_contributions):
+    from dataclasses import replace
+
+    rows = [
+        {"author_hash": "early", "subreddit": "incels", "created_utc": T0},
+        {"author_hash": "late", "subreddit": "incels", "created_utc": T0 + 100 * 86_400},
+    ]
+    cohort = build_cohort(
+        make_contributions(rows), replace(params, max_entry_utc=T0 + 10 * 86_400),
+        ["incels"], ["lonely"], data_end_utc=T0 + 1000 * 86_400,
+    )
+    assert cohort["author_hash"].to_list() == ["early"]

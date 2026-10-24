@@ -66,6 +66,9 @@ robustness:
 coverage_overrides:
   Braincels: {end_utc: 1537392628}            # 2018-09-19 21:30:28Z
   IncelsWithoutHate: {end_utc: 1600363688}    # 2020-09-17 17:28:08Z
+# D3 (DEVIATIONS.md): only users with t0 <= this date are in the cohort, the last
+# date every target stream (incl. Braincels comments) is observed. Round 2 only.
+entry_cutoff_utc: 1537392628   # 2018-09-19 21:30:28Z
 coverage:
   # Users entering within this many days of the earliest target coverage are
   # flagged `near_coverage_start` and excluded from the sensitivity analysis.

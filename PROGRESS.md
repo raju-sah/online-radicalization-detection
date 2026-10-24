@@ -218,3 +218,14 @@ Options (user decision):
 - A (recommended): restrict the cohort to entrants with t0 <= 2018-09-19, the last date all target streams are observed; re-split; rerun Phases 4-9 as a documented second round (DEVIATIONS D3, old numbers kept and labelled superseded). Fast (hours). Smaller, older-era sample.
 - B: keep as is, disclose as a limitation. Fastest, weakest.
 - C: resume the Braincels comments download through 2019-08 (likely 1+ days, API flaky), then rerun. Best data, slow. A and C can be combined (A now, C later).
+
+## Round 2 (D3) STOP: Gate 1 fails mechanically (2026-10-24)
+
+- User chose option A. Implemented `entry_cutoff_utc` (2018-09-19) in config/cohort (+test; 70 tests pass), logged DEVIATIONS D3, preserved round 1 (`data/processed/cohort_r1.parquet`, `embeddings_r1`, `reports/results/real_r1_superseded`, `gate1_class_balance_r1.csv`).
+- Round-2 cohort: 76,512 users; Task A eligible 46,726 (3,677 deep); Task B 722 with gateway (80 deep).
+- Gate 1 with the standard 70/15/15 split over all entrants: train 24,961 users / 1,473 positives, val 0, test 0 => FAIL. Cause: entrants are heavily concentrated in 2018 (quantile 70% = 2018-05-04, 85% = 2018-07-07) but labels are observable only for t0 <= ~2018-06-21, so val/test slices hold only label-null users; the 180-day embargo from the robustness grid then removes the rest.
+- Split alternatives computed on label-eligible users only (`temporal_split`, users/positives):
+  - 0.70/0.15/0.15: train 24,955/1,472, val 0, test 6,998/751 (val empty).
+  - 0.5/0.25/0.25, embargo by primary 90-day windows only: train 16,002/980, val 3,093/294, test 11,616/1,201 (test = 2018-H1 entrants).
+  - 0.5/0.25/0.25, embargo by 180-day windows: train 9,507/634, val 1,569/113, test 11,616/1,201.
+- Needs a user decision (splitting rule is part of the preregistration); nothing else has been run in round 2.

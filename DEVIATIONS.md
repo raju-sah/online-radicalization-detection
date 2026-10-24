@@ -48,3 +48,11 @@
 **D2 addendum.** Even with the eligible-only split, the 180-day embargo from the robustness grid emptied validation, so `configs/mgtow.yaml` restricts the grid to 90-day follow-up (embargo 90 days). The primary label (90-day) is unchanged.
 
 **D2 addendum 2.** Entrants within the observable MGTOW period are dense late in 2017, so a 15% validation slice (83 days) is narrower than the 90-day label window plus embargo and was fully embargoed. `configs/mgtow.yaml` therefore uses split fractions 0.5/0.3/0.2 for this contrast only.
+
+## D3 (2026-10-24): restrict the cohort to entrants on or before 2018-09-19 (round 2)
+
+**What changed.** `entry_cutoff_utc` (2018-09-19 21:30:28Z) was added to `configs/default.yaml`: only users whose first target contribution (t0) is on or before this date are in the cohort. Splits are recomputed on the restricted cohort. All modelling phases (4 to 9) were rerun as "round 2" under dataset tag `real_r2`.
+
+**Reason.** After the Phase 9 interpretation, the entry-year breakdown showed that all validation (from 2018-09-19) and test (2019-08 to 2020-06) entrants fall after the last date Braincels comments are observed (2018-09-19, D1), while Braincels was still active until its submissions end 2019-08-31. Entry times and labels there are mis-measured (spurious entries via IncelsWithoutHate; unobserved Braincels follow-up biases labels to negative). The user chose the restriction on 2026-10-24.
+
+**Disclosure.** This was decided after round-1 test results were seen, for a data-validity reason (not to improve scores). Round-1 results are kept in `reports/results/real_r1_superseded/` (dataset tag `real` in `reports/test_log.csv`), clearly labelled superseded; round-2 test evaluations are logged separately under `real_r2`. Round-2 hyperparameters and procedures are unchanged from round 1.
