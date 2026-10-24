@@ -13,7 +13,7 @@ are in `PREREGISTRATION.md`.
 | 1. Download speed-up + commit | done | Shared 1 req/s limiter, `--workers 3`, priority ordering, duplicate-page advance; download running. |
 | 2. r/incels smoke test | done | Ran 2026-10-23 on complete incels comments+submissions; no schema/parse issues. Tag `phase-2`. |
 | 3. Synthetic features + baselines | done | `features.py`, `models.py`, `scripts/run_models.py`; verified on a 4,000-user synthetic fixture. Tag `phase-3`. |
-| 4. Full real-data run | blocked | Waiting for all target and control downloads. |
+| 4. Full real-data run | done | Run on frozen snapshot (DEVIATIONS D1). Gate 1 PASS. Tag `phase-4`. |
 | 5. Real-data baselines | pending | Depends on Phase 4 and Gate 1. |
 | 6. Sentence embeddings | pending | Depends on Phase 5. |
 | 7. Vocabulary ablation | pending | Depends on Phase 5. |
@@ -152,3 +152,11 @@ synthetic fixtures only; it must not read real data or write to
 
 - The download died silently at 21:15 on 10-23 when the previous Claude session ended (no API error). Restarted as a systemd user unit (`radpath-download`, PID 17646) so it survives session restarts; disk guard is unit `radpath-diskguard`. Status/stop: `systemctl --user status radpath-download`.
 - Checkpoints: incels (both), braincels/incelswithouthate submissions complete; comments: braincels 1.74M (to 2018-09-13), mgtow 1.22M (2017-11-28), incelswithouthate 0.81M (2020-09-03). 4 of 22 complete. Free disk 23 GiB.
+
+## Phase 4 record (done, 2026-10-24)
+
+- User decision (2026-10-24, "Freeze now"): stop the download, analyse the partial snapshot. Logged as DEVIATIONS.md D1 (snapshot table, coverage overrides for Braincels end 2018-09-19 and IncelsWithoutHate end 2020-09-17). Download service stopped; snapshot in `data/raw/SNAPSHOT_2026-10-24.json` (gitignored).
+- Fixture leftovers in data/interim and data/processed were moved to the scratchpad; real data ingested from the 18 non-empty real streams (fixture_* files excluded).
+- Ingest: read 6,571,877, kept 5,228,874; deleted authors 1,282,507, bots 60,496; 0 malformed, 0 bad timestamps; 359,515 distinct hashed authors.
+- Cohort: 102,551 users. Task A eligible 67,727 (5,192 deep, 7.7%); 35,545 embargoed (null split). Task B included only 880 (94 deep) because gateway streams are mostly missing.
+- Gate 1 (`scripts/check_gate1.py`, `reports/results/gate1_class_balance.csv`): primary c20_w4_f90 train n=28,947 / 1,919 positive (6.6%); val 3,931 / 277 (7.0%); test 10,324 / 870 (8.4%). PASS (>=300 train, >=100 test).

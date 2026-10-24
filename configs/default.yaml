@@ -61,7 +61,11 @@ robustness:
 # supplied for known bans/quarantine dates, e.g.
 # coverage_overrides:
 #   Braincels: {start_utc: "2017-01-01", end_utc: "2019-10-01"}
-coverage_overrides: {}
+# D1 (DEVIATIONS.md): comment streams for these targets are incomplete; coverage
+# ends at the last observed comment so later windows are null, not negative.
+coverage_overrides:
+  Braincels: {end_utc: 1537392628}            # 2018-09-19 21:30:28Z
+  IncelsWithoutHate: {end_utc: 1600363688}    # 2020-09-17 17:28:08Z
 coverage:
   # Users entering within this many days of the earliest target coverage are
   # flagged `near_coverage_start` and excluded from the sensitivity analysis.
